@@ -1,0 +1,79 @@
+SimAI-CLEM (Collective communication Library EMulator)
+Copyright 2026 Alibaba Group Holding Limited.
+
+This product includes software developed at Alibaba Group.
+This product includes software developed at NVIDIA CORPORATION.
+
+=======================================================================
+Licensing overview
+=======================================================================
+
+This project (SimAI-CLEM) as a whole, and all modifications contributed by the
+SimAI-CLEM authors, are licensed under the Apache License, Version 2.0 (see the
+LICENSE file in the root of this repository).
+
+SimAI-CLEM is a derivative work that modifies third-party open-source
+components. This repository distributes those modifications as PATCHES
+(nccl_patch, nccl_tests_patch); it does NOT redistribute the upstream
+source trees. You reconstruct the modified sources by cloning the upstream
+project at the pinned commit and applying the corresponding patch (see
+README.md). The upstream copyright and license notices (including each
+project's LICENSE.txt and per-file headers) ship with the upstream tree you
+clone and are preserved after applying the patch. The original NVIDIA BSD
+3-Clause terms continue to apply to the unmodified portions of the NVIDIA
+source code.
+
+-----------------------------------------------------------------------
+1. nccl_patch  --  modifications derived from NVIDIA NCCL
+-----------------------------------------------------------------------
+   Applies on top of NVIDIA NCCL (https://github.com/NVIDIA/nccl),
+   version 2.23.4, commit 2ea4ee94bfb04c886c79ccae60ac9961000fdee2,
+   to reconstruct the SimAI-CLEM component "nccl_hack_rdma".
+
+   Copyright (c) 2015-2022, NVIDIA CORPORATION. All rights reserved.
+   Original license: BSD 3-Clause "New" or "Revised" License.
+   Full text: ships with the upstream NCCL tree as LICENSE.txt (unchanged
+   by nccl_patch); see https://github.com/NVIDIA/nccl/blob/master/LICENSE.txt
+
+   The U.S. Department of Energy funded the development of this software
+   under subcontract 7078610 with Lawrence Berkeley National Laboratory.
+
+   nccl_patch contains MODIFICATIONS by the SimAI-CLEM authors (e.g., the
+   nsibverbs API navigator under src/nsibverbs/, the configurable
+   hardware adapter, and large-scale emulation optimizations).
+
+   --- Third-party subcomponent present in the upstream tree: NVTX ---
+   The reconstructed tree contains src/include/nvtx3/ and nvtx.h, which come
+   from upstream NCCL (NOT introduced by nccl_patch) and originate from the
+   NVIDIA Tools Extension SDK project (https://github.com/NVIDIA/NVTX).
+   Copyright 2009-2022 NVIDIA Corporation. All rights reserved.
+   Licensed under the Apache License v2.0 with LLVM Exceptions.
+   SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+   See https://llvm.org/LICENSE.txt for the license text.
+
+-----------------------------------------------------------------------
+2. nccl_tests_patch  --  modifications derived from NVIDIA nccl-tests
+-----------------------------------------------------------------------
+   Applies on top of NVIDIA nccl-tests (https://github.com/NVIDIA/nccl-tests),
+   tag v2.13.11 (commit 8dfeab9eb9bdfdf13503e71e1f33e7f8a208b540),
+   to reconstruct the SimAI-CLEM component "nccl-tests-modify".
+
+   Copyright (c) 2016-2017, NVIDIA CORPORATION. All rights reserved.
+   Original license: BSD 3-Clause "New" or "Revised" License.
+   Full text: ships with the upstream nccl-tests tree as LICENSE.txt
+   (unchanged by nccl_tests_patch); see
+   https://github.com/NVIDIA/nccl-tests/blob/master/LICENSE.txt
+
+   nccl_tests_patch contains MODIFICATIONS by the SimAI-CLEM authors (e.g.,
+   simulation time access via IPC, hostname hijacking and memory reuse
+   optimizations).
+
+=======================================================================
+Note on the "simulator-network" component
+=======================================================================
+The network simulator component ("simulator-network", based on ns-3/SimAI)
+is NOT part of this repository. It is maintained separately in the
+aliyun/ns-3-alibabacloud repository (branch feat/ipc-middleware) and is
+governed by its own license (GNU GPL v2). No code in this repository is
+licensed under that GPL component, and none of the GPL-licensed code is
+distributed here under the Apache License 2.0.

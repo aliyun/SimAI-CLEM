@@ -1,0 +1,871 @@
+diff --git a/src/all_reduce.cu b/src/all_reduce.cu
+index a38eabe..d00682d 100644
+--- a/src/all_reduce.cu
++++ b/src/all_reduce.cu
+@@ -90,6 +90,7 @@ testResult_t AllReduceRunTest(struct threadArgs* args, int root, ncclDataType_t
+       TESTCHECK(TimeTest(args, run_types[i], run_typenames[i], run_ops[j], run_opnames[j], -1));
+     }
+   }
++  printf("AllReduceRunTest Successful\n");
+   return testSuccess;
+ }
+ 
+diff --git a/src/common.cu b/src/common.cu
+index e1f8a85..27b912b 100644
+--- a/src/common.cu
++++ b/src/common.cu
+@@ -13,8 +13,12 @@
+ #include "cuda.h"
+ 
+ #include "../verifiable/verifiable.h"
++#define NUM_GPUS_PER_SERVER 8
++#define QUERY_TIME_FLAG     222
++#define QUERY_CPUTIME_FLAG  220
+ 
+ int test_ncclVersion = 0; // init'd with ncclGetVersion()
++SimTimer sim_tim;
+ 
+ #if NCCL_MAJOR >= 2
+   ncclDataType_t test_types[ncclNumTypes] = {
+@@ -59,6 +63,7 @@ int is_main_proc = 0;
+ thread_local int is_main_thread = 0;
+ 
+ // Command line parameter defaults
++char *server_addr = NULL;
+ static int nThreads = 1;
+ static int nGpus = 1;
+ static size_t minBytes = 32*1024*1024;
+@@ -83,6 +88,7 @@ static int report_cputime = 0;
+ static int average = 1;
+ #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+ static int local_register = 0;
++static int startNodeIdx;
+ #endif
+ 
+ #define NUM_BLOCKS 32
+@@ -435,7 +441,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
+ #endif
+ 
+   // Performance Benchmark
+-  timer tim;
++  sim_tim.GetStartTime();
+   for (int iter = 0; iter < iters; iter++) {
+     if (agg_iters>1) NCCLCHECK(ncclGroupStart());
+     for (int aiter = 0; aiter < agg_iters; aiter++) {
+@@ -456,7 +462,7 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
+     }
+     // Resync CPU, restart timing, launch cuda graph
+     Barrier(args);
+-    tim.reset();
++    sim_tim.reset();
+     for (int l=0; l<cudaGraphLaunches; l++) {
+       for (int i=0; i<args->nGpus; i++) {
+         CUDACHECK(cudaGraphLaunch(graphExec[i], args->streams[i]));
+@@ -465,11 +471,12 @@ testResult_t BenchTime(struct threadArgs* args, ncclDataType_t type, ncclRedOp_t
+   }
+ #endif
+ 
+-  double cputimeSec = tim.elapsed()/(iters*agg_iters);
++  double cputimeSec = sim_tim.elapsed(QUERY_CPUTIME_FLAG)/(iters*agg_iters);
+   TESTCHECK(completeColl(args));
+ 
+-  double deltaSec = tim.elapsed();
++  double deltaSec = sim_tim.elapsed(QUERY_TIME_FLAG);
+   deltaSec = deltaSec/(iters*agg_iters);
++  printf("Node %s deltaSec %lf\n", getenv("NODE_ID"), deltaSec);
+   if (cudaGraphLaunches >= 1) deltaSec = deltaSec/cudaGraphLaunches;
+   Allreduce(args, &deltaSec, average);
+ 
+@@ -585,18 +592,18 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char*
+   Barrier(args);
+ 
+   // Warm-up for large size
+-  setupArgs(args->maxbytes, type, args);
+-  for (int iter = 0; iter < warmup_iters; iter++) {
+-    TESTCHECK(startColl(args, type, op, root, 0, iter));
+-  }
+-  TESTCHECK(completeColl(args));
+-
+-  // Warm-up for small size
+-  setupArgs(args->minbytes, type, args);
+-  for (int iter = 0; iter < warmup_iters; iter++) {
+-    TESTCHECK(startColl(args, type, op, root, 0, iter));
+-  }
+-  TESTCHECK(completeColl(args));
++  // setupArgs(args->maxbytes, type, args);
++  // for (int iter = 0; iter < warmup_iters; iter++) {
++  //   TESTCHECK(startColl(args, type, op, root, 0, iter));
++  // }
++  // TESTCHECK(completeColl(args));
++
++  // // Warm-up for small size
++  // setupArgs(args->minbytes, type, args);
++  // for (int iter = 0; iter < warmup_iters; iter++) {
++  //   TESTCHECK(startColl(args, type, op, root, 0, iter));
++  // }
++  // TESTCHECK(completeColl(args));
+ 
+   // Benchmark
+   long repeat = run_cycles;
+@@ -607,11 +614,11 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char*
+       sprintf(rootName, "%6i", root);
+       PRINT("%12li  %12li  %8s  %6s  %6s", max(args->sendBytes, args->expectedBytes), args->nbytes / wordSize(type), typeName, opName, rootName);
+       TESTCHECK(BenchTime(args, type, op, root, 0));
+-      TESTCHECK(BenchTime(args, type, op, root, 1));
++      // TESTCHECK(BenchTime(args, type, op, root, 1));
+       PRINT("\n");
+     }
+   } while (--repeat);
+-
++  PRINT("TimeTest Successful\n");
+   return testSuccess;
+ }
+ 
+@@ -671,13 +678,14 @@ testResult_t threadLaunch(struct testThread* thread) {
+ }
+ 
+ testResult_t AllocateBuffs(void **sendbuff, size_t sendBytes, void **recvbuff, size_t recvBytes, void **expected, size_t nbytes) {
++  // 因为模拟器不传输CUDA数据且不关注数据正确与否 所以sendbuff recvbuff共用内存区域
+ #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+-    NCCLCHECK(ncclMemAlloc(sendbuff, nbytes));
+-    NCCLCHECK(ncclMemAlloc(recvbuff, nbytes));
++    NCCLCHECK(ncclMemAlloc(sendbuff, SIM_ALLOC_MEM_SIZE));
++    *recvbuff = *sendbuff;
+     if (datacheck) NCCLCHECK(ncclMemAlloc(expected, recvBytes));
+ #else
+-    CUDACHECK(cudaMalloc(sendbuff, nbytes));
+-    CUDACHECK(cudaMalloc(recvbuff, nbytes));
++    CUDACHECK(cudaMalloc(sendbuff, SIM_ALLOC_MEM_SIZE));
++    *recvbuff = *sendbuff;
+     if (datacheck) CUDACHECK(cudaMalloc(expected, recvBytes));
+ #endif
+     return testSuccess;
+@@ -741,12 +749,15 @@ int main(int argc, char* argv[]) {
+ 
+   while(1) {
+     int c;
+-    c = getopt_long(argc, argv, "t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:hG:C:a:R:", longopts, &longindex);
++    c = getopt_long(argc, argv, "A:t:g:b:e:i:f:n:m:w:N:p:c:o:d:r:z:y:T:hG:C:a:R:", longopts, &longindex);
+ 
+     if (c == -1)
+       break;
+ 
+     switch(c) {
++      case 'A':
++        server_addr = strdup(optarg);
++        break;
+       case 't':
+         nThreads = strtol(optarg, NULL, 0);
+         break;
+@@ -846,6 +857,7 @@ int main(int argc, char* argv[]) {
+       default:
+         if (c != 'h') printf("invalid option '%c'\n", c);
+         printf("USAGE: %s \n\t"
++            "[-A,--server_addr <server ip address>] \n\t"
+             "[-t,--nthreads <num threads>] \n\t"
+             "[-g,--ngpus <gpus per thread>] \n\t"
+             "[-b,--minbytes <min size in bytes>] \n\t"
+@@ -879,6 +891,7 @@ int main(int argc, char* argv[]) {
+         return 0;
+     }
+   }
++  printf("ns-3 server address: %s\n", server_addr);
+   if (minBytes > maxBytes) {
+     fprintf(stderr, "invalid sizes for 'minbytes' and 'maxbytes': %llu > %llu\n",
+            (unsigned long long)minBytes,
+@@ -901,8 +914,29 @@ testResult_t run() {
+ #ifdef MPI_SUPPORT
+   MPI_Comm_size(MPI_COMM_WORLD, &totalProcs);
+   MPI_Comm_rank(MPI_COMM_WORLD, &proc);
++  char totalProcsStr[12];
++  char procStr[12];
++  char sockStr[12];
++  sprintf(totalProcsStr, "%d", totalProcs);
++
++  char *envStartNodeIdx = getenv("START_NODE_ID");
++  if (envStartNodeIdx) {
++    startNodeIdx = std::atoi(envStartNodeIdx);
++  } else {
++    startNodeIdx = 0;
++  }
++  sprintf(procStr, "%d", proc+startNodeIdx);
++  printf("==============================================\n");
++  printf("%s: totalProcs=%s, proc=%s\n", hostname, totalProcsStr, procStr);
++  setenv("NUM_TOTAL_NODES", totalProcsStr, 1);
++  setenv("NODE_ID", procStr, 1);
++  printf("==============================================\n");
++  int sock = sim_tim.ConstructTimeSocket(proc+startNodeIdx);
++  sprintf(sockStr, "%d", sock);
++  setenv("SOCKET_FD", sockStr, 1);
++  // 在模拟器中 会用
+   uint64_t hostHashs[totalProcs];
+-  hostHashs[proc] = getHostHash(hostname);
++  hostHashs[proc] = proc / NUM_GPUS_PER_SERVER;
+   MPI_Allgather(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, hostHashs, sizeof(uint64_t), MPI_BYTE, MPI_COMM_WORLD);
+   for (int p=0; p<totalProcs; p++) {
+     if (p == proc) break;
+@@ -959,7 +993,7 @@ testResult_t run() {
+ #endif
+ 
+   // We need sendbuff, recvbuff, expected (when datacheck enabled), plus 1G for the rest.
+-  size_t memMaxBytes = (maxMem - (1<<30)) / (datacheck ? 3 : 2);
++  size_t memMaxBytes = maxMem - (1<<28);
+   if (maxBytes > memMaxBytes) {
+     maxBytes = memMaxBytes;
+     if (proc == 0) printf("#\n# Reducing maxBytes to %ld due to memory limitation\n", maxBytes);
+@@ -1092,7 +1126,7 @@ testResult_t run() {
+ #ifdef MPI_SUPPORT
+   MPI_Allreduce(MPI_IN_PLACE, &errors[0], 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+ #endif
+-
++  PRINT("Before Deregister\n");
+   if (!parallel_init) {
+     for(int i=0; i<nGpus*nThreads; ++i) {
+ #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+@@ -1103,16 +1137,19 @@ testResult_t run() {
+     }
+     free(comms);
+   }
++  PRINT("Before Free off CUDA allocated memory\n");
+ 
+   // Free off CUDA allocated memory
+   for (int i=0; i<nGpus*nThreads; i++) {
+ #if NCCL_VERSION_CODE >= NCCL_VERSION(2,19,0)
+     if (sendbuffs[i]) NCCLCHECK(ncclMemFree((char*)sendbuffs[i]));
+-    if (recvbuffs[i]) NCCLCHECK(ncclMemFree((char*)recvbuffs[i]));
++    // 为了节省显存 sendbuff和recvbuff共用一块地址 所以不需要重复释放内存空间
++    // if (recvbuffs[i]) NCCLCHECK(ncclMemFree((char*)recvbuffs[i]));
+     if (datacheck) NCCLCHECK(ncclMemFree(expected[i]));
+ #else
+     if (sendbuffs[i]) CUDACHECK(cudaFree((char*)sendbuffs[i]));
+-    if (recvbuffs[i]) CUDACHECK(cudaFree((char*)recvbuffs[i]));
++    // 为了节省显存 sendbuff和recvbuff共用一块地址 所以不需要重复释放内存空间
++    // if (recvbuffs[i]) CUDACHECK(cudaFree((char*)recvbuffs[i]));
+     if (datacheck) CUDACHECK(cudaFree(expected[i]));
+ #endif
+   }
+diff --git a/src/common.h b/src/common.h
+index e6762e1..973721f 100644
+--- a/src/common.h
++++ b/src/common.h
+@@ -20,6 +20,8 @@
+ // For nccl.h < 2.13 since we define a weak fallback
+ extern "C" char const* ncclGetLastError(ncclComm_t comm);
+ 
++#define SIM_ALLOC_MEM_SIZE 8388608 
++
+ #define CUDACHECK(cmd) do {                         \
+   cudaError_t err = cmd;                            \
+   if( err != cudaSuccess ) {                        \
+diff --git a/src/timer.cc b/src/timer.cc
+index f65be4d..b0de980 100644
+--- a/src/timer.cc
++++ b/src/timer.cc
+@@ -1,5 +1,5 @@
+ #include "timer.h"
+-
++#include <stdio.h>
+ // Make sure to compile this translation unit with the host compiler and not
+ // nvcc, lest you hit an internal compiler error (ICE) with GCC 10.3.0
+ #include <chrono>
+@@ -26,3 +26,61 @@ double timer::reset() {
+   t0 = t1;
+   return ans;
+ }
++
++SimTimer::SimTimer() {
++}
++
++int SimTimer::ConstructTimeSocket(int node_id) {
++  struct sockaddr_in serv_addr;
++  // 创建 socket 文件描述符
++  if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
++    printf("\n Socket creation error \n");
++    return -1;
++  }
++
++  serv_addr.sin_family = AF_INET;
++  serv_addr.sin_port = htons(SERVER_PORT + node_id);
++
++  // 将 IP 地址转换为网络字节序
++  if (inet_pton(AF_INET, server_addr, &serv_addr.sin_addr) <= 0) {
++    printf("\nInvalid address/ Address not supported \n");
++    return -1;
++  }
++
++  // 连接到服务器
++  if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
++    perror("connect");
++    return -1;
++  }
++  return sock;
++}
++
++int64_t SimTimer::GetSimTime(int flag) {
++  // 发送数据到服务器
++  int message = flag;
++  write(sock, &message, sizeof(message));
++  // 接收服务器的响应
++  int64_t time_ns = 0;
++  int valread = read(sock, &time_ns, sizeof(time_ns));
++  if (valread == sizeof(time_ns)) {
++    return time_ns;
++  } else {
++    printf("read failed");
++    return -1;
++  }
++}
++int64_t SimTimer::GetStartTime() {
++  t0 = GetSimTime(111);
++  return t0;
++}
++double SimTimer::elapsed(int flag) {
++  int64_t t1 = GetSimTime(flag);
++  return 1.e-9*(t1 - t0);
++}
++
++double SimTimer::reset() {
++  int64_t t1 = GetSimTime(333);
++  double ans = 1.e-9*(t1 - t0);
++  t0 = t1;
++  return ans;
++}
+diff --git a/src/timer.h b/src/timer.h
+index 33aed4d..4f87812 100644
+--- a/src/timer.h
++++ b/src/timer.h
+@@ -2,8 +2,28 @@
+ #define _408319ecdd5b47b28bf8f511c4fdf816
+ 
+ #include <cstdint>
++// socket
++#include <sys/socket.h>
++#include <arpa/inet.h>
++#include <unistd.h>
++#include <ifaddrs.h>
++#include <net/if.h>
+ 
++extern char * server_addr;
++#define SERVER_PORT 13000
+ // Can't include <chrono> because of bug with gcc 10.3.0
++class SimTimer {
++public:
++  int64_t t0;
++  int sock;
++  SimTimer();
++  int ConstructTimeSocket(int node_id);
++  int64_t GetSimTime(int flag);
++  int64_t GetStartTime();
++  double elapsed(int flag);
++  double reset();
++};
++
+ class timer {
+   std::uint64_t t0;
+ public:
+diff --git a/test/Makefile b/test/Makefile
+new file mode 100644
+index 0000000..0eacb66
+--- /dev/null
++++ b/test/Makefile
+@@ -0,0 +1,72 @@
++# Copyright (c) 2023, Your Name. All rights reserved.
++#
++# See LICENSE.txt for license information
++
++CUDA_HOME ?= /usr/local/cuda
++PREFIX ?= /usr/local
++VERBOSE ?= 0
++DEBUG ?= 0
++CUDA_LIB ?= $(CUDA_HOME)/lib64
++CUDA_INC ?= $(CUDA_HOME)/include
++NVCC ?= $(CUDA_HOME)/bin/nvcc
++CUDARTLIB ?= cudart
++CUDA_VERSION = $(strip $(shell which $(NVCC) >/dev/null && $(NVCC) --version | grep release | sed 's/.*release //' | sed 's/\,.*//'))
++CUDA_MAJOR = $(shell echo $(CUDA_VERSION) | cut -d "." -f 1)
++
++# Better define NVCC_GENCODE in your environment to the minimal set
++# of archs to reduce compile time.
++ifeq ($(shell test "0$(CUDA_MAJOR)" -ge 11; echo $$?),0)
++NVCC_GENCODE ?= -gencode=arch=compute_60,code=sm_60 \
++                -gencode=arch=compute_61,code=sm_61 \
++                -gencode=arch=compute_70,code=sm_70 \
++                -gencode=arch=compute_80,code=sm_80 \
++                -gencode=arch=compute_80,code=compute_80
++else
++NVCC_GENCODE ?= -gencode=arch=compute_35,code=sm_35 \
++                -gencode=arch=compute_50,code=sm_50 \
++                -gencode=arch=compute_60,code=sm_60 \
++                -gencode=arch=compute_61,code=sm_61 \
++                -gencode=arch=compute_70,code=sm_70 \
++                -gencode=arch=compute_70,code=compute_70
++endif
++
++NVCUFLAGS  := -ccbin $(CXX) $(NVCC_GENCODE) -std=c++11
++CXXFLAGS   := -std=c++11
++LDFLAGS    := -L${CUDA_LIB} -lcudart -lrt
++NVLDFLAGS  := -L${CUDA_LIB} -l${CUDARTLIB} -lrt
++
++ifeq ($(DEBUG), 0)
++NVCUFLAGS += -O3 -g
++CXXFLAGS  += -O3 -g
++else
++NVCUFLAGS += -O0 -G -g
++CXXFLAGS  += -O0 -g -ggdb3
++endif
++
++ifneq ($(VERBOSE), 0)
++NVCUFLAGS += -Xcompiler -Wall,-Wextra,-Wno-unused-parameter
++else
++.SILENT:
++endif
++
++.PHONY: build clean
++
++BUILDDIR ?= build
++SRC_FILES := $(wildcard *.cu)
++OBJ_FILES := $(SRC_FILES:%.cu=${BUILDDIR}/%.o)
++BIN_FILE := ${BUILDDIR}/device_attr
++
++build: ${BIN_FILE}
++
++clean:
++	rm -rf ${BUILDDIR}
++
++${BUILDDIR}/%.o: %.cu common.h nccl1_compat.h
++	@printf "Compiling  %-35s > %s\n" $< $@
++	@mkdir -p ${BUILDDIR}
++	$(NVCC) -o $@ $(NVCUFLAGS) -c $<
++
++${BUILDDIR}/device_attr: ${OBJ_FILES}
++	@printf "Linking  %-35s > %s\n" $^ $@
++	@mkdir -p ${BUILDDIR}
++	$(NVCC) -o $@ $(NVCUFLAGS) $^ ${NVLDFLAGS}
+diff --git a/test/common.h b/test/common.h
+new file mode 100644
+index 0000000..edc369e
+--- /dev/null
++++ b/test/common.h
+@@ -0,0 +1,285 @@
++/*************************************************************************
++ * Copyright (c) 2016-2022, NVIDIA CORPORATION. All rights reserved.
++ *
++ * See LICENSE.txt for license information
++ ************************************************************************/
++#ifndef __COMMON_H__
++#define __COMMON_H__
++
++#include "nccl.h"
++#include <stdio.h>
++#include <cstdint>
++#include <algorithm>
++#ifdef MPI_SUPPORT
++#include "mpi.h"
++#endif
++#include <pthread.h>
++#include "nccl1_compat.h"
++
++// For nccl.h < 2.13 since we define a weak fallback
++extern "C" char const* ncclGetLastError(ncclComm_t comm);
++
++#define CUDACHECK(cmd) do {                         \
++  cudaError_t err = cmd;                            \
++  if( err != cudaSuccess ) {                        \
++    char hostname[1024];                            \
++    getHostName(hostname, 1024);                    \
++    printf("%s: Test CUDA failure %s:%d '%s'\n",    \
++         hostname,                                  \
++        __FILE__,__LINE__,cudaGetErrorString(err)); \
++    return testCudaError;                           \
++  }                                                 \
++} while(0)
++
++#if NCCL_VERSION_CODE >= NCCL_VERSION(2,13,0)
++#define NCCLCHECK(cmd) do {                         \
++  ncclResult_t res = cmd;                           \
++  if (res != ncclSuccess) {                         \
++    char hostname[1024];                            \
++    getHostName(hostname, 1024);                    \
++    printf("%s: Test NCCL failure %s:%d "           \
++           "'%s / %s'\n",                           \
++           hostname,__FILE__,__LINE__,              \
++           ncclGetErrorString(res),                 \
++           ncclGetLastError(NULL));                 \
++    return testNcclError;                           \
++  }                                                 \
++} while(0)
++#else
++#define NCCLCHECK(cmd) do {                         \
++  ncclResult_t res = cmd;                           \
++  if (res != ncclSuccess) {                         \
++    char hostname[1024];                            \
++    getHostName(hostname, 1024);                    \
++    printf("%s: Test NCCL failure %s:%d '%s'\n",    \
++         hostname,                                  \
++        __FILE__,__LINE__,ncclGetErrorString(res)); \
++    return testNcclError;                           \
++  }                                                 \
++} while(0)
++#endif
++
++typedef enum {
++  testSuccess = 0,
++  testInternalError = 1,
++  testCudaError = 2,
++  testNcclError = 3,
++  testTimeout = 4,
++  testNumResults = 5
++} testResult_t;
++
++// Relay errors up and trace
++#define TESTCHECK(cmd) do {                         \
++  testResult_t r = cmd;                             \
++  if (r!= testSuccess) {                            \
++    char hostname[1024];                            \
++    getHostName(hostname, 1024);                    \
++    printf(" .. %s pid %d: Test failure %s:%d\n",   \
++         hostname, getpid(),                        \
++        __FILE__,__LINE__);                         \
++    return r;                                       \
++  }                                                 \
++} while(0)
++
++struct testColl {
++  const char name[20];
++  void (*getCollByteCount)(
++      size_t *sendcount, size_t *recvcount, size_t *paramcount,
++      size_t *sendInplaceOffset, size_t *recvInplaceOffset,
++      size_t count, int nranks);
++  testResult_t (*initData)(struct threadArgs* args, ncclDataType_t type,
++      ncclRedOp_t op, int root, int rep, int in_place);
++  void (*getBw)(size_t count, int typesize, double sec, double* algBw, double* busBw, int nranks);
++  testResult_t (*runColl)(void* sendbuff, void* recvbuff, size_t count, ncclDataType_t type,
++      ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream);
++};
++extern struct testColl allReduceTest;
++extern struct testColl allGatherTest;
++extern struct testColl reduceScatterTest;
++extern struct testColl broadcastTest;
++extern struct testColl reduceTest;
++extern struct testColl alltoAllTest;
++
++struct testEngine {
++  void (*getBuffSize)(size_t *sendcount, size_t *recvcount, size_t count, int nranks);
++  testResult_t (*runTest)(struct threadArgs* args, int root, ncclDataType_t type,
++      const char* typeName, ncclRedOp_t op, const char* opName);
++};
++
++extern struct testEngine ncclTestEngine;
++
++struct threadArgs {
++  size_t nbytes;
++  size_t minbytes;
++  size_t maxbytes;
++  size_t stepbytes;
++  size_t stepfactor;
++
++  int totalProcs;
++  int nProcs;
++  int proc;
++  int nThreads;
++  int thread;
++  int nGpus;
++  int* gpus;
++  int localRank;
++  void** sendbuffs;
++  size_t sendBytes;
++  size_t sendInplaceOffset;
++  void** recvbuffs;
++  size_t recvInplaceOffset;
++  ncclUniqueId ncclId;
++  ncclComm_t* comms;
++  cudaStream_t* streams;
++
++  void** expected;
++  size_t expectedBytes;
++  int* errors;
++  double* bw;
++  int* bw_count;
++
++  int reportErrors;
++
++  struct testColl* collTest;
++};
++
++typedef testResult_t (*threadFunc_t)(struct threadArgs* args);
++struct testThread {
++  pthread_t thread;
++  threadFunc_t func;
++  struct threadArgs args;
++  testResult_t ret;
++};
++
++// Provided by common.cu
++// extern void Barrier(struct threadArgs* args);
++// extern testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* typeName, ncclRedOp_t op,  const char* opName, int root);
++// extern testResult_t InitDataReduce(void* data, const size_t count, const size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks);
++// extern testResult_t InitData(void* data, const size_t count, size_t offset, ncclDataType_t type, ncclRedOp_t op, const uint64_t seed, const int nranks, const int rank);
++// extern void AllocateBuffs(void **sendbuff, void **recvbuff, void **expected, void **expectedHost, size_t nbytes, int nranks);
++
++#include <unistd.h>
++
++static void getHostName(char* hostname, int maxlen) {
++  gethostname(hostname, maxlen);
++  for (int i=0; i< maxlen; i++) {
++    if (hostname[i] == '.') {
++      hostname[i] = '\0';
++      return;
++    }
++  }
++}
++
++#include <stdint.h>
++
++static uint64_t getHash(const char* string, size_t n) {
++  // Based on DJB2a, result = result * 33 ^ char
++  uint64_t result = 5381;
++  for (size_t c = 0; c < n; c++) {
++    result = ((result << 5) + result) ^ string[c];
++  }
++  return result;
++}
++
++/* Generate a hash of the unique identifying string for this host
++ * that will be unique for both bare-metal and container instances
++ * Equivalent of a hash of;
++ *
++ * $(hostname)$(cat /proc/sys/kernel/random/boot_id)
++ *
++ */
++#define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
++static uint64_t getHostHash(const char* hostname) {
++  char hostHash[1024];
++
++  // Fall back is the hostname if something fails
++  (void) strncpy(hostHash, hostname, sizeof(hostHash));
++  int offset = strlen(hostHash);
++
++  FILE *file = fopen(HOSTID_FILE, "r");
++  if (file != NULL) {
++    char *p;
++    if (fscanf(file, "%ms", &p) == 1) {
++        strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
++        free(p);
++    }
++  }
++  fclose(file);
++
++  // Make sure the string is terminated
++  hostHash[sizeof(hostHash)-1]='\0';
++
++  return getHash(hostHash, strlen(hostHash));
++}
++
++static size_t wordSize(ncclDataType_t type) {
++  switch(type) {
++    case ncclChar:
++#if NCCL_MAJOR >= 2
++    //case ncclInt8:
++    case ncclUint8:
++#endif
++      return 1;
++    case ncclHalf:
++#if defined(__CUDA_BF16_TYPES_EXIST__)
++    case ncclBfloat16:
++#endif
++    //case ncclFloat16:
++      return 2;
++    case ncclInt:
++    case ncclFloat:
++#if NCCL_MAJOR >= 2
++    //case ncclInt32:
++    case ncclUint32:
++    //case ncclFloat32:
++#endif
++      return 4;
++    case ncclInt64:
++    case ncclUint64:
++    case ncclDouble:
++    //case ncclFloat64:
++      return 8;
++    default: return 0;
++  }
++}
++
++extern int test_ncclVersion; // init'd with ncclGetVersion()
++constexpr int test_opNumMax = (int)ncclNumOps + (NCCL_VERSION_CODE >= NCCL_VERSION(2,11,0) ? 1 : 0);
++extern int test_opnum;
++extern int test_typenum;
++extern ncclDataType_t test_types[ncclNumTypes];
++extern const char *test_typenames[ncclNumTypes];
++extern ncclRedOp_t test_ops[];
++extern const char *test_opnames[];
++
++static int ncclstringtotype(char *str) {
++    for (int t=0; t<test_typenum; t++) {
++      if (strcmp(str, test_typenames[t]) == 0) {
++        return t;
++      }
++    }
++    if (strcmp(str, "all") == 0) {
++      return -1;
++    }
++    printf("invalid type %s, defaulting to %s .. \n", str, test_typenames[ncclFloat]);
++    return ncclFloat;
++}
++
++static int ncclstringtoop (char *str) {
++    for (int o=0; o<test_opnum; o++) {
++      if (strcmp(str, test_opnames[o]) == 0) {
++        return o;
++      }
++    }
++    if (strcmp(str, "all") == 0) {
++      return -1;
++    }
++    printf("invalid op %s, defaulting to %s .. \n", str, test_opnames[ncclSum]);
++    return ncclSum;
++}
++
++extern int is_main_proc;
++extern thread_local int is_main_thread;
++#define PRINT if (is_main_thread) printf
++
++#endif
+diff --git a/test/device_attr.cu b/test/device_attr.cu
+new file mode 100644
+index 0000000..c8faf71
+--- /dev/null
++++ b/test/device_attr.cu
+@@ -0,0 +1,74 @@
++#include "common.h"
++#include <pthread.h>
++#include <cstdio>
++#include <type_traits>
++#include <getopt.h>
++#include <libgen.h>
++#include "cuda.h"
++
++#include <iostream>
++
++void printDeviceProp(const cudaDeviceProp& prop) {
++  std::cout << "Device Properties:" << std::endl;
++  std::cout << "  name: " << prop.name << std::endl;
++  std::cout << "  totalGlobalMem: " << prop.totalGlobalMem << " bytes" << std::endl;
++  std::cout << "  sharedMemPerBlock: " << prop.sharedMemPerBlock << " bytes" << std::endl;
++  std::cout << "  regsPerBlock: " << prop.regsPerBlock << std::endl;
++  std::cout << "  warpSize: " << prop.warpSize << std::endl;
++  std::cout << "  memPitch: " << prop.memPitch << " bytes" << std::endl;
++  std::cout << "  maxThreadsPerBlock: " << prop.maxThreadsPerBlock << std::endl;
++  std::cout << "  maxThreadsDim[0]: " << prop.maxThreadsDim[0] << std::endl;
++  std::cout << "  maxThreadsDim[1]: " << prop.maxThreadsDim[1] << std::endl;
++  std::cout << "  maxThreadsDim[2]: " << prop.maxThreadsDim[2] << std::endl;
++  std::cout << "  maxGridSize[0]: " << prop.maxGridSize[0] << std::endl;
++  std::cout << "  maxGridSize[1]: " << prop.maxGridSize[1] << std::endl;
++  std::cout << "  maxGridSize[2]: " << prop.maxGridSize[2] << std::endl;
++  std::cout << "  clockRate: " << prop.clockRate << " kHz" << std::endl;
++  std::cout << "  totalConstMem: " << prop.totalConstMem << " bytes" << std::endl;
++  std::cout << "  major: " << prop.major << std::endl;
++  std::cout << "  minor: " << prop.minor << std::endl;
++  std::cout << "  textureAlignment: " << prop.textureAlignment << " bytes" << std::endl;
++  std::cout << "  deviceOverlap: " << (prop.deviceOverlap ? "Enabled" : "Disabled") << std::endl;
++  std::cout << "  multiProcessorCount: " << prop.multiProcessorCount << std::endl;
++  std::cout << "  kernelExecTimeoutEnabled: " << (prop.kernelExecTimeoutEnabled ? "Enabled" : "Disabled") << std::endl;
++  std::cout << "  integrated: " << (prop.integrated ? "Yes" : "No") << std::endl;
++  std::cout << "  canMapHostMemory: " << (prop.canMapHostMemory ? "Yes" : "No") << std::endl;
++  std::cout << "  computeMode: " << prop.computeMode << std::endl;
++  std::cout << "  maxTexture1D: " << prop.maxTexture1D << std::endl;
++  std::cout << "  maxTexture2D[0]: " << prop.maxTexture2D[0] << std::endl;
++  std::cout << "  maxTexture2D[1]: " << prop.maxTexture2D[1] << std::endl;
++  std::cout << "  maxTexture3D[0]: " << prop.maxTexture3D[0] << std::endl;
++  std::cout << "  maxTexture3D[1]: " << prop.maxTexture3D[1] << std::endl;
++  std::cout << "  maxTexture3D[2]: " << prop.maxTexture3D[2] << std::endl;
++  std::cout << "  maxTexture1DLayered[0]: " << prop.maxTexture1DLayered[0] << std::endl;
++  std::cout << "  maxTexture1DLayered[1]: " << prop.maxTexture1DLayered[1] << std::endl;
++  std::cout << "  maxTexture2DLayered[0]: " << prop.maxTexture2DLayered[0] << std::endl;
++  std::cout << "  maxTexture2DLayered[1]: " << prop.maxTexture2DLayered[1] << std::endl;
++  std::cout << "  maxTexture2DLayered[2]: " << prop.maxTexture2DLayered[2] << std::endl;
++  std::cout << "  surfaceAlignment: " << prop.surfaceAlignment << " bytes" << std::endl;
++  std::cout << "  concurrentKernels: " << (prop.concurrentKernels ? "Enabled" : "Disabled") << std::endl;
++  std::cout << "  ECCEnabled: " << (prop.ECCEnabled ? "Enabled" : "Disabled") << std::endl;
++  std::cout << "  pciBusID: " << prop.pciBusID << std::endl;
++  std::cout << "  pciDeviceID: " << prop.pciDeviceID << std::endl;
++  std::cout << "  pciDomainID: " << prop.pciDomainID << std::endl;
++  std::cout << "  tccDriver: " << (prop.tccDriver ? "Enabled" : "Disabled") << std::endl;
++  std::cout << "  asyncEngineCount: " << prop.asyncEngineCount << std::endl;
++  std::cout << "  unifiedAddressing: " << (prop.unifiedAddressing ? "Enabled" : "Disabled") << std::endl;
++  std::cout << "  memoryClockRate: " << prop.memoryClockRate << " kHz" << std::endl;
++  std::cout << "  memoryBusWidth: " << prop.memoryBusWidth << " bits" << std::endl;
++  std::cout << "  l2CacheSize: " << prop.l2CacheSize << " bytes" << std::endl;
++  std::cout << "  maxThreadsPerMultiProcessor: " << prop.maxThreadsPerMultiProcessor << std::endl;
++}
++
++int main(int argc, char* argv[]) {
++  int deviceCount;
++  CUDACHECK(cudaGetDeviceCount(&deviceCount));
++  printf("deviceCount: %d\n",deviceCount);
++  for(int i=0;i<deviceCount;i++) {
++    cudaDeviceProp prop;
++    CUDACHECK(cudaGetDeviceProperties(&prop, i));
++    std::cout << "Device " << i << std::endl;
++    printDeviceProp(prop);
++  }
++  return 0;
++}
+\ No newline at end of file
+diff --git a/test/nccl1_compat.h b/test/nccl1_compat.h
+new file mode 100644
+index 0000000..020a4bc
+--- /dev/null
++++ b/test/nccl1_compat.h
+@@ -0,0 +1,50 @@
++/*************************************************************************
++ * Copyright (c) 2017-2019, NVIDIA CORPORATION. All rights reserved.
++ *
++ * See LICENSE.txt for license information
++ ************************************************************************/
++
++#ifndef NCCL1_COMPAT_H
++#define NCCL1_COMPAT_H
++
++#ifndef NCCL_MAJOR // NCCL 1.x
++#define NCCL_MAJOR 1
++#define NCCL_MINOR 0
++
++#define ncclNumOps nccl_NUM_OPS
++#define ncclNumTypes nccl_NUM_TYPES
++
++static ncclResult_t ncclGroupStart() { return ncclSuccess; }
++static ncclResult_t ncclGroupEnd() { return ncclSuccess; }
++
++#define CHECKCOUNT(count) if (count > INT_MAX) return ncclInvalidArgument;
++
++static ncclResult_t ncclReduce(const void* sendbuff, void* recvbuff, size_t count, ncclDataType_t datatype,
++    ncclRedOp_t op, int root, ncclComm_t comm, cudaStream_t stream) {
++  CHECKCOUNT(count);
++  return ncclReduce(sendbuff, recvbuff, (int)count, datatype, op, root, comm, stream);
++}
++static ncclResult_t ncclAllReduce(const void* sendbuff, void* recvbuff, size_t count,
++    ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm, cudaStream_t stream) {
++  CHECKCOUNT(count);
++  return ncclAllReduce(sendbuff, recvbuff, (int)count, datatype, op, comm, stream);
++}
++static ncclResult_t ncclBcast(void* buff, size_t count, ncclDataType_t datatype, int root,
++    ncclComm_t comm, cudaStream_t stream) {
++  CHECKCOUNT(count);
++  return ncclBcast(buff, (int)count, datatype, root, comm, stream);
++}
++static ncclResult_t ncclReduceScatter(const void* sendbuff, void* recvbuff,
++    size_t recvcount, ncclDataType_t datatype, ncclRedOp_t op, ncclComm_t comm,
++    cudaStream_t stream) {
++  CHECKCOUNT(recvcount);
++  return ncclReduceScatter(sendbuff, recvbuff, (int)recvcount, datatype, op, comm, stream);
++}
++static ncclResult_t ncclAllGather(const void* sendbuff, void* recvbuff, size_t sendcount,
++    ncclDataType_t datatype, ncclComm_t comm, cudaStream_t stream) {
++  CHECKCOUNT(sendcount);
++  return ncclAllGather(sendbuff, (int)sendcount, datatype, recvbuff, comm, stream);
++}
++#endif
++
++#endif

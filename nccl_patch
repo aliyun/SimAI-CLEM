@@ -1,0 +1,5732 @@
+diff --git a/makefiles/common.mk b/makefiles/common.mk
+index 59e4151c..faed5198 100644
+--- a/makefiles/common.mk
++++ b/makefiles/common.mk
+@@ -14,7 +14,7 @@ UBSAN ?= 0
+ TRACE ?= 0
+ PROFAPI ?= 1
+ NVTX ?= 1
+-RDMA_CORE ?= 0
++RDMA_CORE ?= 1
+ 
+ NVCC = $(CUDA_HOME)/bin/nvcc
+ 
+diff --git a/pkg/debian/copyright b/pkg/debian/copyright
+deleted file mode 120000
+index 1ef648f6..00000000
+--- a/pkg/debian/copyright
++++ /dev/null
+@@ -1 +0,0 @@
+-../../LICENSE.txt
+\ No newline at end of file
+diff --git a/pkg/debian/copyright b/pkg/debian/copyright
+new file mode 100644
+index 00000000..bcd1867a
+--- /dev/null
++++ b/pkg/debian/copyright
+@@ -0,0 +1,39 @@
++
++ Copyright (c) 2015-2020, NVIDIA CORPORATION. All rights reserved.
++
++ Redistribution and use in source and binary forms, with or without
++ modification, are permitted provided that the following conditions
++ are met:
++  * Redistributions of source code must retain the above copyright
++    notice, this list of conditions and the following disclaimer.
++  * Redistributions in binary form must reproduce the above copyright
++    notice, this list of conditions and the following disclaimer in the
++    documentation and/or other materials provided with the distribution.
++  * Neither the name of NVIDIA CORPORATION, Lawrence Berkeley National
++    Laboratory, the U.S. Department of Energy, nor the names of their
++    contributors may be used to endorse or promote products derived
++    from this software without specific prior written permission.
++
++ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
++ EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
++ PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
++ CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
++ EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
++ PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
++ PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
++ OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++ The U.S. Department of Energy funded the development of this software
++ under subcontract 7078610 with Lawrence Berkeley National Laboratory.
++
++
++This code also includes files from the NVIDIA Tools Extension SDK project.
++
++See:
++
++   https://github.com/NVIDIA/NVTX
++
++for more information and license details.
+diff --git a/src/Makefile b/src/Makefile
+index b254eac3..ecd6f250 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -13,7 +13,8 @@ LIBSRCFILES := \
+ 	init.cc init_nvtx.cc net.cc proxy.cc transport.cc register.cc \
+ 	$(wildcard graph/*.cc) \
+ 	$(wildcard misc/*.cc) \
+-	$(wildcard transport/*.cc)
++	$(wildcard transport/*.cc) \
++	$(wildcard nsibverbs/*.cc)
+ 
+ ##### lib files
+ LIBNAME     := libnccl.so
+diff --git a/src/device/all_gather.h b/src/device/all_gather.h
+index fb56e483..51c36739 100644
+--- a/src/device/all_gather.h
++++ b/src/device/all_gather.h
+@@ -7,6 +7,7 @@
+ #include "device.h"
+ #include "collectives.h"
+ #include "primitives.h"
++#define SIM_ALLOC_MEM_SIZE 4194304
+ 
+ namespace {
+   template<typename T, typename RedOp, typename Proto>
+@@ -37,27 +38,28 @@ namespace {
+       // step 0: push data to next GPU
+       rankDest = ringRanks[0];
+       offset = dataOffset + rankDest * count;
+-
++      dataOffset = dataOffset % SIM_ALLOC_MEM_SIZE;
++      offset = offset % SIM_ALLOC_MEM_SIZE;
+       if (inputBuf + dataOffset == outputBuf + offset) { // In place
+-        prims.directSend(dataOffset, offset, nelem);
++        prims.directSend(0, 0, nelem);
+       } else {
+-        prims.directCopySend(dataOffset, offset, nelem);
++        prims.directCopySend(0, 0, nelem);
+       }
+ 
+       // k-2 steps: copy to next GPU
+       for (int j=1; j<nranks-1; ++j) {
+         rankDest = ringRanks[nranks-j];
+         offset = dataOffset + rankDest * count;
+-
+-        prims.directRecvCopyDirectSend(offset, nelem);
++        offset = offset % SIM_ALLOC_MEM_SIZE;
++        prims.directRecvCopyDirectSend(0, nelem);
+       }
+ 
+       // Make final copy from buffer to dest.
+       rankDest = ringRanks[1];
+       offset = dataOffset + rankDest * count;
+-
++      offset = offset % SIM_ALLOC_MEM_SIZE;
+       // Final wait/copy.
+-      prims.directRecv(offset, offset, nelem);
++      prims.directRecv(0, 0, nelem);
+     }
+   }
+ }
+diff --git a/src/device/all_reduce.h b/src/device/all_reduce.h
+index 36b8d320..5f6803ae 100644
+--- a/src/device/all_reduce.h
++++ b/src/device/all_reduce.h
+@@ -7,6 +7,7 @@
+ #include "device.h"
+ #include "collectives.h"
+ #include "primitives.h"
++#define SIM_ALLOC_MEM_SIZE 4194304
+ 
+ namespace {
+   template<typename T, typename RedOp, typename Proto>
+@@ -43,16 +44,18 @@ namespace {
+       chunk = modRanks(ringIx + nranks - 1);
+       chunkOffset = chunk * chunkCount;
+       offset = gridOffset + elemOffset + chunkOffset;
++      offset = offset % SIM_ALLOC_MEM_SIZE;
+       nelem = (int)min(chunkCount, remCount - chunkOffset);
+-      prims.directSend(offset, offset, nelem);
++      prims.directSend(0, 0, nelem);
+ 
+       // k-2 steps: reduce and copy to next GPU
+       for (int j = 2; j < nranks; ++j) {
+         chunk = modRanks(ringIx + nranks - j);
+         chunkOffset = chunk * chunkCount;
+         offset = gridOffset + elemOffset + chunkOffset;
++        offset = offset % SIM_ALLOC_MEM_SIZE;
+         nelem = (int)min(chunkCount, remCount - chunkOffset);
+-        prims.directRecvReduceDirectSend(offset, offset, nelem);
++        prims.directRecvReduceDirectSend(0, 0, nelem);
+       }
+ 
+       // step k-1: reduce this buffer and data, which will produce the final
+@@ -60,25 +63,28 @@ namespace {
+       chunk = ringIx + 0;
+       chunkOffset = chunk * chunkCount;
+       offset = gridOffset + elemOffset + chunkOffset;
++      offset = offset % SIM_ALLOC_MEM_SIZE;
+       nelem = (int)min(chunkCount, remCount - chunkOffset);
+-      prims.directRecvReduceCopyDirectSend(offset, offset, nelem, /*postOp=*/true);
++      prims.directRecvReduceCopyDirectSend(0, 0, nelem, /*postOp=*/true);
+ 
+       // k-2 steps: copy to next GPU
+       for (int j = 1; j < nranks - 1; ++j) {
+         chunk = modRanks(ringIx + nranks - j);
+         chunkOffset = chunk * chunkCount;
+         offset = gridOffset + elemOffset + chunkOffset;
++        offset = offset % SIM_ALLOC_MEM_SIZE;
+         nelem = (int)min(chunkCount, remCount - chunkOffset);
+-        prims.directRecvCopyDirectSend(offset, nelem);
++        prims.directRecvCopyDirectSend(0, nelem);
+       }
+ 
+       // Make final copy from buffer to dest.
+       chunk = modRanks(ringIx + 1);
+       chunkOffset = chunk * chunkCount;
+       offset = gridOffset + elemOffset + chunkOffset;
++      offset = offset % SIM_ALLOC_MEM_SIZE;
+       nelem = (int)min(chunkCount, remCount - chunkOffset);
+ 
+-      prims.directRecv(offset, offset, nelem);
++      prims.directRecv(0, 0, nelem);
+     }
+   }
+ 
+diff --git a/src/device/reduce_scatter.h b/src/device/reduce_scatter.h
+index f7b3c25e..2d0f7da2 100644
+--- a/src/device/reduce_scatter.h
++++ b/src/device/reduce_scatter.h
+@@ -7,6 +7,7 @@
+ #include "device.h"
+ #include "collectives.h"
+ #include "primitives.h"
++#define SIM_ALLOC_MEM_SIZE 4194304
+ 
+ namespace {
+   template<typename T, typename RedOp, typename Proto>
+@@ -38,19 +39,23 @@ namespace {
+       // step 0: push data to next GPU
+       rankDest = ringRanks[nranks-1];
+       offset = dataOffset + rankDest * count;
+-      prims.send(offset, nelem);
++      offset = offset % SIM_ALLOC_MEM_SIZE;
++      prims.send(0, nelem);
+ 
+       // k-2 steps: reduce and copy to next GPU
+       for (int j=2; j<nranks; ++j) {
+         rankDest = ringRanks[nranks-j];
+         offset = dataOffset + rankDest * count;
+-        prims.recvReduceSend(offset, nelem);
++        offset = offset % SIM_ALLOC_MEM_SIZE;
++        prims.recvReduceSend(0, nelem);
+       }
+ 
+       // step k-1: reduce this buffer and data, which will produce the final result
+       rankDest = ringRanks[0];
+       offset = dataOffset + rankDest * count;
+-      prims.recvReduceCopy(offset, dataOffset, nelem, /*postOp=*/true);
++      dataOffset = dataOffset % SIM_ALLOC_MEM_SIZE;
++      offset = offset % SIM_ALLOC_MEM_SIZE;
++      prims.recvReduceCopy(0, 0, nelem, /*postOp=*/true);
+     }
+   }
+ }
+diff --git a/src/graph/connect.cc b/src/graph/connect.cc
+index 3f639a02..644ee0ec 100644
+--- a/src/graph/connect.cc
++++ b/src/graph/connect.cc
+@@ -11,6 +11,9 @@
+ #include "trees.h"
+ #include "rings.h"
+ #include "topo.h"
++#include "xml.h"
++#include <vector>
++#include <sstream>
+ 
+ /******************************************************************/
+ /********************* Internode connection ***********************/
+@@ -91,21 +94,246 @@ ncclResult_t ncclTopoPreset(struct ncclComm* comm, struct ncclTopoGraph** graphs
+   return ncclSuccess;
+ }
+ 
+-static ncclResult_t connectRings(struct ncclComm* comm, int* ringRecv, int* ringSend, int* ringPrev, int* ringNext) {
++static ncclResult_t connectNRings(struct ncclComm* comm, int* ringRecv, int* ringSend, int* ringPrev, int* ringNext) {
+   int nChannels = comm->nChannels;
+-  int nNodes = comm->nNodes;
++  printf("[RING] Connecting %d rings\n", nChannels);
+   for (int c=0; c<nChannels; c++) {
+-    int* recv = ringRecv+c*comm->nNodes;
+-    int* send = ringSend+c*comm->nNodes;
++    char line[1024];
++    sprintf(line, "Ring %d: ", c);
+     int* prev = ringPrev+c*comm->nRanks;
+     int* next = ringNext+c*comm->nRanks;
+-    for (int n=0; n<nNodes; n++) {
+-      int recvRank = recv[n];
+-      int prevSendRank = send[(n-1+nNodes)%nNodes];
+-      prev[recvRank] = prevSendRank;
+-      int sendRank = send[n];
+-      int nextRecvRank = recv[(n+1)%nNodes];
+-      next[sendRank] = nextRecvRank;
++    for (int r=0; r<comm->nRanks; r++) {
++      prev[r] = (r + comm->nRanks - 1) % comm->nRanks;
++      next[r] = (r + 1) % comm->nRanks;
++      sprintf(line+strlen(line), "next[%d]=%d\n",r, next[r]);
++    }
++  }
++  return ncclSuccess;
++}
++
++static ncclResult_t ncclTopoGetIntraChannelFromXmlSub(struct ncclXmlNode *xmlGraph, std::vector<std::vector<int>> &intraChannels) {
++  for (int c=0; c<xmlGraph->nSubs; c++) {
++    struct ncclXmlNode *xmlChannel = xmlGraph->subs[c];
++    std::vector<int> channel;
++    for (int devIdx=0; devIdx < xmlChannel->nSubs; devIdx++) {
++      struct ncclXmlNode* devSub = xmlChannel->subs[devIdx];
++      if(strcmp(devSub->name, "gpu") == 0) {
++        int64_t dev;
++        const char* str;
++        NCCLCHECK(xmlGetAttrStr(devSub, "dev", &str));
++        dev = strtol(str, NULL, 16);
++        channel.push_back(dev);
++      }
++    }
++    intraChannels.push_back(channel);
++  }
++  return ncclSuccess;
++}
++
++int getPrev(std::vector<int> intraChannel, int rankInNode, int nodeIdx, int numTotalNodes) {
++  int prevRankInNode = -1;
++  int prevNodeIdx    = -1;
++  for(int i = 0; i < intraChannel.size(); i++) {
++    if(intraChannel[i] == rankInNode) {
++      prevRankInNode = intraChannel[(i-1+intraChannel.size())%intraChannel.size()];
++      if(i==0) {
++        prevNodeIdx = (nodeIdx-1+numTotalNodes)%numTotalNodes;
++      } else {
++        prevNodeIdx = nodeIdx;
++      }
++      break;
++    }
++  }
++  return prevNodeIdx*intraChannel.size() + prevRankInNode;
++}
++int getNext(std::vector<int> intraChannel, int rankInNode, int nodeIdx, int numTotalNodes) {
++  int nextRankInNode = -1;
++  int nextNodeIdx    = -1;
++  for(int i = 0; i < intraChannel.size(); i++) {
++    if(intraChannel[i] == rankInNode) {
++      nextRankInNode = intraChannel[(i+1)%intraChannel.size()];
++      if(i==intraChannel.size()-1) {
++        nextNodeIdx = (nodeIdx+1)%numTotalNodes;
++      } else {
++        nextNodeIdx = nodeIdx;
++      }
++      break;
++    }
++  }
++  return nextNodeIdx*intraChannel.size() + nextRankInNode;
++}
++int getPrev(std::vector<int> intraChannel, std::vector<int> intraChannelOdd, int rankInNode, int nodeIdx, int numTotalNodes) {
++  int prevRankInNode = -1;
++  int prevNodeIdx    = -1;
++  if (nodeIdx % 2 == 1) {
++    // 当前节点是奇数节点
++    for(int i = 0; i < intraChannelOdd.size(); i++) {
++      if(intraChannelOdd[i] == rankInNode) {
++        // 先确定 prevNodeIdx
++        if(i==0) {
++          prevNodeIdx = (nodeIdx-1+numTotalNodes)%numTotalNodes;
++        } else {
++          prevNodeIdx = nodeIdx;
++        }
++        // 再确定 prevRankInNode
++        if (prevNodeIdx % 2 == 1) {
++          prevRankInNode = intraChannelOdd[(i-1+8)%8];
++        } else {
++          prevRankInNode = intraChannel[(i-1+8)%8];
++        }
++        return prevNodeIdx*intraChannel.size() + prevRankInNode;
++      }
++    }
++  } else {
++    // 当前节点是偶数节点
++    for(int i = 0; i < intraChannel.size(); i++) {
++      if(intraChannel[i] == rankInNode) {
++        // 先确定 prevNodeIdx
++        if(i==0) {
++          prevNodeIdx = (nodeIdx-1+numTotalNodes)%numTotalNodes;
++        } else {
++          prevNodeIdx = nodeIdx;
++        }
++        // 再确定 prevRankInNode
++        if (prevNodeIdx % 2 == 1) {
++          prevRankInNode = intraChannelOdd[(i-1+8)%8];
++        } else {
++          prevRankInNode = intraChannel[(i-1+8)%8];
++        }
++        return prevNodeIdx*intraChannel.size() + prevRankInNode;
++      }
++    }
++  }
++
++}
++int getNext(std::vector<int> intraChannel, std::vector<int> intraChannelOdd, int rankInNode, int nodeIdx, int numTotalNodes) {
++  int nextRankInNode = -1;
++  int nextNodeIdx    = -1;
++  if(nodeIdx % 2 == 1) {
++    // 当前节点是奇数节点
++    for(int i = 0; i < intraChannelOdd.size(); i++) {
++      if(intraChannelOdd[i] == rankInNode) {
++        // 先确定 nextNodeIdx
++        if(i==7) {
++          nextNodeIdx = (nodeIdx+1)%numTotalNodes;
++        } else {
++          nextNodeIdx = nodeIdx;
++        }
++        // 再确定 nextRankInNode
++        if (nextNodeIdx % 2 == 1) {
++          nextRankInNode = intraChannelOdd[(i+1)%8];
++        } else {
++          nextRankInNode = intraChannel[(i+1)%8];
++        }
++        return nextNodeIdx*intraChannel.size() + nextRankInNode;
++      }
++    }
++  } else {
++    // 当前节点是偶数节点
++    for(int i = 0; i < intraChannel.size(); i++) {
++      if(intraChannel[i] == rankInNode) {
++        // 先确定 nextNodeIdx
++        if(i==7) {
++          nextNodeIdx = (nodeIdx+1)%numTotalNodes;
++        } else {
++          nextNodeIdx = nodeIdx;
++        }
++        // 再确定 nextRankInNode
++        if (nextNodeIdx % 2 == 1) {
++          nextRankInNode = intraChannelOdd[(i+1)%8];
++        } else {
++          nextRankInNode = intraChannel[(i+1)%8];
++        }
++        return nextNodeIdx*intraChannel.size() + nextRankInNode;
++      }
++    }
++  }
++}
++
++int getNRingChannelsFromXml() {
++  const char* str = ncclGetEnv("SIM_CHANNEL_FILE");
++  INFO(NCCL_INIT, "SIM_CHANNEL_FILE=%s", str);
++  struct ncclXml* xml;
++  NCCLCHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
++  NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, xml));
++  for(int s = 0; s<xml->nodes->nSubs; s++) {
++    ncclXmlNode *xmlGraph = xml->nodes->subs[s];
++    int pattern;
++    NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &pattern));
++    if(pattern == NCCL_TOPO_PATTERN_RING) {
++      INFO(NCCL_INIT, "getNRingChannelsFromXml()=%d", xmlGraph->nSubs);
++      return xmlGraph->nSubs;
++    }
++  }
++}
++static ncclResult_t connectMultiRingsFromXml(struct ncclComm* comm, int* ringRecv, int* ringSend, int* ringPrev, int* ringNext) {
++  char *env_value = getenv("NUM_GPUS_PER_SERVER");
++  if (env_value == NULL) {
++    fprintf(stderr, "Environment variable NUM_GPUS_PER_SERVER is not set.\n");
++    return ncclInternalError;
++  }
++  int num_gpus_per_server = std::stoi(env_value);
++  
++  int nChannels = comm->nChannels;
++  int nNodes = comm->nNodes;
++  // 第一步 read XML file
++  const char* str = ncclGetEnv("SIM_CHANNEL_FILE");
++  const char* avoid_cross = ncclGetEnv("SIM_AVOID_CROSS_RAIL");
++  bool to_avoid_cross = (avoid_cross != NULL && strcmp(avoid_cross, "1") == 0);
++  INFO(NCCL_INIT, "SIM_CHANNEL_FILE=%s", str);
++  struct ncclXml* xml;
++  NCCLCHECK(xmlAlloc(&xml, NCCL_GRAPH_XML_MAX_NODES));
++  NCCLCHECK(ncclTopoGetXmlGraphFromFile(str, xml));
++  for(int s = 0; s<xml->nodes->nSubs; s++) {
++    ncclXmlNode *xmlGraph = xml->nodes->subs[s];
++    int pattern;
++    NCCLCHECK(xmlGetAttrInt(xmlGraph, "pattern", &pattern));
++    if(pattern == NCCL_TOPO_PATTERN_RING) {
++      std::vector<std::vector<int>> intraChannels;
++      NCCLCHECK(ncclTopoGetIntraChannelFromXmlSub(xmlGraph, intraChannels));
++      std::vector<std::vector<int>> intraChannelsForOddNodes;
++      // NCCL会有 Alternate rings to avoid crossing rails 的优化逻辑
++      for(int c = 0; c < intraChannels.size(); c++) {
++        intraChannelsForOddNodes.push_back(intraChannels[c^1]);
++      }
++      int curNChannels = intraChannels.size();
++      nChannels = comm->nChannels = curNChannels;
++      // for(int c=0; c<curNChannels; c++) {
++      //   char line[513];
++      //   for(int i=0;i<intraChannels[0].size();i++) {
++      //     sprintf(line+8*i, "[%3d] - ",intraChannels[c][i]);
++      //   }
++      //   INFO(NCCL_INIT, "Channel %d: %s", c, line);
++      // }
++      for(int c=0; c<curNChannels; c++) {
++        int* prev = ringPrev+c*comm->nRanks;
++        int* next = ringNext+c*comm->nRanks;
++        int numTotalNodes = comm->nRanks / num_gpus_per_server;
++        for(int r=0; r<comm->nRanks; r++) {
++          int rankInNode = r % num_gpus_per_server;
++          int nodeIdx    = r / num_gpus_per_server;
++          if(to_avoid_cross) {
++            // 考虑 Alternate rings to avoid crossing rails 的优化逻辑
++            prev[r] = getPrev(intraChannels[c], intraChannelsForOddNodes[c], rankInNode, nodeIdx, numTotalNodes);
++            next[r] = getNext(intraChannels[c], intraChannelsForOddNodes[c], rankInNode, nodeIdx, numTotalNodes);
++          } else {
++            // 不考虑 Alternate rings to avoid crossing rails 的优化逻辑
++            prev[r] = getPrev(intraChannels[c], rankInNode, nodeIdx, numTotalNodes);
++            next[r] = getNext(intraChannels[c], rankInNode, nodeIdx, numTotalNodes);
++          }          
++        }
++        char line[2048+1];
++        for(int n=0,idx=0;idx<nNodes;) {
++          sprintf(line+12*idx, "next[%2d]=%2d ",n, next[n]);
++          n = next[n];
++          idx += 1;
++        }
++        
++        INFO(NCCL_GRAPH, "nNodes = %d, nRanks = %d, Channel %d: %s",comm->nNodes, comm->nRanks, c, line);
++      }
++
++    } else {
++      continue;
+     }
+   }
+   return ncclSuccess;
+@@ -372,9 +600,18 @@ void exchangeValues(int* v0, int* v1) {
+   *v0 = tmp;
+ }
+ 
++bool enableP2pInSimulator() {
++  bool enable_p2p = (strcmp(getenv("SIMU_ENABLE_GPU_P2P"), "true") == 0);
++  return enable_p2p;
++}
+ NCCL_PARAM(UnpackDoubleNChannels, "UNPACK_DOUBLE_NCHANNELS", 1);
+ 
+ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePatterns, struct ncclTopoRanks** allTopoRanks, int* rings, struct ncclTopoGraph** graphs, struct ncclComm* parent) {
++  if(enableP2pInSimulator()) {
++    comm->nChannels = getNRingChannelsFromXml();
++  } else {
++    comm->nChannels = ncclParamMinNchannels();
++  }
+   // Gather data from all ranks
+   ncclResult_t ret = ncclSuccess;
+   int *ringRecv = NULL, *ringSend = NULL, *ringPrev = NULL, *ringNext = NULL, *treeToParent = NULL, *treeToChild0 = NULL, *treeToChild1 = NULL, *nvlsHeads = NULL;
+@@ -392,6 +629,14 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
+   NCCLCHECKGOTO(ncclCalloc(&treeToChild1, nNodes*MAXCHANNELS), ret, fail);
+   NCCLCHECKGOTO(ncclCalloc(&nvlsHeads, nNodes*MAXCHANNELS), ret, fail);
+ 
++  char line[512+1];
++  for(int r=0; r<comm->nRanks; r++) {
++    sprintf(line+r*12, "rToN[%2d]=%2d ",r,comm->rankToNode[r]);
++  }
++  INFO(NCCL_GRAPH, "nChannels %d rankToNode %s", nChannels, line);
++  for(int c=0; c<nChannels; c++) {
++    INFO(NCCL_GRAPH, "Channel %d For Rank 0 ringRecv %d ringSend %d ringPrev %d ringNext %d",c, allTopoRanks[0]->ringRecv[c], allTopoRanks[0]->ringSend[c], allTopoRanks[0]->ringPrev[c], allTopoRanks[0]->ringNext[c]);
++  }
+   // Alternate rings to avoid crossing rails
+   if (graphs[NCCL_ALGO_RING]->crossNic && (nChannels % 2) == 0) {
+     for (int r=0; r<comm->nRanks; r++) {
+@@ -422,6 +667,30 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
+     }
+   }
+ 
++  // for ring channel debugging
++  for (int c=0; c<nChannels;c++) {
++    std::stringstream ringRecvLine, ringSendLine, ringPrevLine, ringNextLine;
++    for (int n=0; n<nNodes; n++) {
++      int r = firstRanks[n];
++      char str1[128], str2[128];
++      sprintf(str1, "ringRecv[%d]=%d; ", n, allTopoRanks[r]->ringRecv[c]);
++      sprintf(str2, "ringSend[%d]=%d; ", n, allTopoRanks[r]->ringSend[c]);
++      ringRecvLine << str1;
++      ringSendLine << str2;
++    }
++    for (int r=0; r<nranks; r++) {
++      char str1[128], str2[128];
++      sprintf(str1, "ringPrev[%d]=%d; ", r, allTopoRanks[r]->ringPrev[c]);
++      sprintf(str2, "ringNext[%d]=%d; ", r, allTopoRanks[r]->ringNext[c]);
++      ringPrevLine << str1;
++      ringNextLine << str2;
++    }
++    INFO(NCCL_INIT, "Channel %d ringRecv: %s", c, ringRecvLine.str().c_str());
++    INFO(NCCL_INIT, "Channel %d ringSend: %s", c, ringSendLine.str().c_str());
++    INFO(NCCL_INIT, "Channel %d ringPrev: %s", c, ringPrevLine.str().c_str());
++    INFO(NCCL_INIT, "Channel %d ringNext: %s", c, ringNextLine.str().c_str());
++  }
++
+   for (int n = 0; n < nNodes; n++) {
+     int r = firstRanks[n];
+     if (minHeadNum > allTopoRanks[r]->nvlsHeadNum)
+@@ -436,23 +705,31 @@ ncclResult_t ncclTopoPostset(struct ncclComm* comm, int* firstRanks, int* treePa
+   }
+ 
+   // Connect rings and trees. This should also duplicate the channels.
+-  NCCLCHECKGOTO(connectRings(comm, ringRecv, ringSend, ringPrev, ringNext), ret, fail);
+-  NCCLCHECKGOTO(connectTrees(comm, treeToParent, treeToChild0, treeToChild1, treePatterns), ret, fail);
++  if(enableP2pInSimulator()) {
++    NCCLCHECKGOTO(connectMultiRingsFromXml(comm, ringRecv, ringSend, ringPrev, ringNext), ret, fail);
++  } else {
++    NCCLCHECKGOTO(connectNRings(comm, ringRecv, ringSend, ringPrev, ringNext), ret, fail);
++  }
++  // NCCLCHECKGOTO(connectTrees(comm, treeToParent, treeToChild0, treeToChild1, treePatterns), ret, fail);
++  INFO(NCCL_INIT, "after connectMultiRingsFromXml, comm->nChannels = %d", comm->nChannels);
+ 
+   // Duplicate ringPrev/ringNext for ncclBuildRing
+-  memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
+-  memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
++  // In Simulator 不需要复制channels 否则可能会在NVSwitch上出现拥塞
++  // memcpy(ringPrev+nChannels*nranks, ringPrev, nChannels*nranks*sizeof(int));
++  // memcpy(ringNext+nChannels*nranks, ringNext, nChannels*nranks*sizeof(int));
+ 
+   // Set ring prev/next for my rank
+   for (int c=0; c<nChannels; c++) {
+     struct ncclChannel* channel0 = comm->channels+c;
+-    struct ncclChannel* channel1 = channel0+nChannels;
+-    channel0->ring.prev = channel1->ring.prev = ringPrev[c*nranks+comm->rank];
+-    channel0->ring.next = channel1->ring.next = ringNext[c*nranks+comm->rank];
++    // struct ncclChannel* channel1 = channel0+nChannels;
++    // channel0->ring.prev = channel1->ring.prev = ringPrev[c*nranks+comm->rank];
++    // channel0->ring.next = channel1->ring.next = ringNext[c*nranks+comm->rank];
++    channel0->ring.prev = ringPrev[c*nranks+comm->rank];
++    channel0->ring.next = ringNext[c*nranks+comm->rank];
+   }
+ 
+   // Duplication should be complete now
+-  nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
++  // nChannels = comm->nChannels = std::min(MAXCHANNELS,nChannels*2);
+ 
+   // Setup CollNet
+   if (comm->collNetSupport == 1) {
+diff --git a/src/include/command.h b/src/include/command.h
+new file mode 100644
+index 00000000..63f484a6
+--- /dev/null
++++ b/src/include/command.h
+@@ -0,0 +1,127 @@
++#ifndef __COMMAND_H__
++#define __COMMAND_H__
++
++#include <stdint.h>
++#include <chrono>
++#include <thread>
++#include <fstream>
++#include <vector>
++#include "core.h"
++#include "verbs.h"
++#define POLL_TIMEOUT_VALUE 4000
++
++struct IbvCommand;
++struct IbvCommandResponse;
++typedef boost::interprocess::allocator<IbvCommand, boost::interprocess::managed_shared_memory::segment_manager> IbvCommandAllocator;
++typedef boost::interprocess::allocator<IbvCommandResponse, boost::interprocess::managed_shared_memory::segment_manager> IbvCommandResponseAllocator;
++typedef boost::interprocess::vector<IbvCommand, IbvCommandAllocator> CommandQueue;
++typedef boost::interprocess::vector<IbvCommandResponse, IbvCommandResponseAllocator> CommandResponseQueue;
++extern uint32_t ascending_cmd_id;
++extern std::vector<int64_t> pollTimeVector;
++extern std::ofstream outFile;
++extern CommandQueue *cmd_queue;
++extern CommandResponseQueue *cmd_resp_queue;
++extern boost::interprocess::interprocess_mutex * cmd_queue_mutex;
++extern boost::interprocess::interprocess_mutex * cmd_resp_queue_mutex;
++
++extern "C" {
++enum IbvCommandType {
++  IBV_CREATE_QP,
++  IBV_CREATE_CQ,
++  IBV_POST_SEND,
++  IBV_POST_RECV,
++  IBV_POLL_CQ,
++  IBV_MODIFY_QP,
++  IBV_DESTROY_QP,
++  IBV_DESTROY_CQ,
++  IBV_QUERY_QP,
++  IBV_QUERY_TIME
++};
++
++struct IbvCommand{
++  uint32_t cmd_id;
++  enum IbvCommandType cmd_type;
++  union {
++    struct {
++      int device_id;
++      struct shm_ibv_qp_init_attr qp_init_attr;
++    } create_qp_input_args;
++    struct {
++      int device_id;
++      int cqe;
++      int comp_vector;
++    } create_cq_input_args;  
++    struct {
++      char shm_qp_name[40];
++      struct ibv_qp_attr attr;
++      int attr_mask;
++    } modify_qp_input_args;
++    struct {
++      char shm_qp_name[40];
++      struct shm_ibv_send_wr wr;
++    } post_send_input_args;
++    struct {
++      char shm_qp_name[40];
++      struct shm_ibv_recv_wr wr;
++    } post_recv_input_args;
++    struct {
++      char shm_qp_name[40];
++      int attr_mask;
++    } query_qp_input_args;
++    struct {
++      char shm_qp_name[40];
++    } destroy_qp_input_args;
++    struct {
++      char shm_cq_name[40];
++    } destroy_cq_input_args;
++    struct {
++      int64_t nosense;
++    } query_time_input_args;
++    
++  } cmd_args;
++};
++
++struct IbvCommandResponse{
++  uint32_t cmd_id;
++  enum IbvCommandType cmd_type;
++  union {
++    struct {
++      char qp_name[40];
++      int qp_num;
++    } create_qp_output_args;
++    struct {
++      char cq_name[40];
++    } create_cq_output_args;
++    struct {
++      int retval;
++    } modify_qp_output_args;
++    struct {
++      int retval;
++    } post_send_output_args;
++    struct {
++      int retval;
++    } post_recv_output_args;
++    struct {
++      int retval;
++      struct ibv_qp_attr attr;
++      struct shm_ibv_qp_init_attr init_attr;
++    } query_qp_output_args;
++    struct {
++      int retval;
++    } destroy_qp_output_args;
++    struct {
++      int retval;
++    } destroy_cq_output_args;
++    struct {
++      int64_t time_ns;
++    } query_time_output_args;
++  } cmd_reponse;
++};
++char *GetCurrentTime();
++int64_t GetSimTime(int flag);
++
++bool SendIbvCommand(IbvCommand &cmd);
++bool TryPopCommandResponse(IbvCommandResponse &cmd_resp);
++bool RecvIbvCommandResponse(IbvCommandResponse &cmd_resp, uint32_t cmd_id);
++}
++#endif  // __COMMAND_H__
+\ No newline at end of file
+diff --git a/src/include/hca_map.h b/src/include/hca_map.h
+new file mode 100644
+index 00000000..c46fcab9
+--- /dev/null
++++ b/src/include/hca_map.h
+@@ -0,0 +1,48 @@
++#include <map>
++#include <string>
++#include <iostream>
++#include <fstream>
++#include <sstream>
++#include <cstdlib>
++
++extern std::map<int, std::map<std::string, std::string>> simhca2realhca_map;
++
++inline const char* get_hca_map_filename() {
++  const char* env_filename = std::getenv("SIMHCA2REALHCA_MAP_FILENAME");
++  if (env_filename != nullptr) {
++    return env_filename;
++  }
++  // 默认路径
++  return NULL;
++}
++
++void load_hca_map() {
++  const char* filename = get_hca_map_filename();
++  if (filename == NULL) {
++    fprintf(stderr, "Error: SIMHCA2REALHCA_MAP_FILENAME not set\n");
++    return;
++  }
++  std::ifstream file(filename);
++  if (!file.is_open()) {
++    fprintf(stderr, "Error: cannot open %s\n", filename);
++    return;
++  }
++  std::string line;
++  while (std::getline(file, line)) {
++    // 忽略空行和注释行
++    if (line.empty()) continue;
++    if (line[0] == '#') continue;
++    
++    std::istringstream iss(line);
++    int node_id;
++    std::string sim_hca;
++    std::string real_hca;
++    if(!(iss >> node_id >> sim_hca >> real_hca)) {
++      fprintf(stderr, "Error: invalid line: %s\n", line.c_str());
++      return;
++    }
++    simhca2realhca_map[node_id][sim_hca] = real_hca;
++  }
++  file.close();
++  return; 
++}
+\ No newline at end of file
+diff --git a/src/include/ibvsymbols.h b/src/include/ibvsymbols.h
+index 906b0df7..7c5f551e 100644
+--- a/src/include/ibvsymbols.h
++++ b/src/include/ibvsymbols.h
+@@ -2,7 +2,7 @@
+ #define NCCL_IBV_SYMBOLS_H_
+ 
+ #ifdef NCCL_BUILD_RDMA_CORE
+-#include <infiniband/verbs.h>
++#include "verbs.h"
+ #else
+ #include "ibvcore.h"
+ #endif
+diff --git a/src/include/ibvwrap.h b/src/include/ibvwrap.h
+index c3709584..2aeb8101 100644
+--- a/src/include/ibvwrap.h
++++ b/src/include/ibvwrap.h
+@@ -13,7 +13,7 @@
+ #define NCCL_IBVWRAP_H_
+ 
+ #ifdef NCCL_BUILD_RDMA_CORE
+-#include <infiniband/verbs.h>
++#include "verbs.h"
+ #else
+ #include "ibvcore.h"
+ #endif
+@@ -21,6 +21,9 @@
+ #include "core.h"
+ #include <sys/types.h>
+ #include <unistd.h>
++#include <random>
++
++extern uint32_t total_cqes_polled;
+ 
+ typedef enum ibv_return_enum
+ {
+@@ -56,6 +59,14 @@ ncclResult_t wrap_ibv_create_cq(struct ibv_cq **ret, struct ibv_context *context
+ ncclResult_t wrap_ibv_destroy_cq(struct ibv_cq *cq);
+ static inline ncclResult_t wrap_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc, int* num_done) {
+   int done = cq->context->ops.poll_cq(cq, num_entries, wc); /*returns the number of wcs or 0 on success, a negative number otherwise*/
++  total_cqes_polled += done;
++  // for(int i=0; i<done; i++) {
++  //   INFO(NCCL_ALL,"ibv_poll_cq: wc[%d] status=%d, opcode=%d, wr_id=%lu, qp_num=%d", i, wc[i].status, wc[i].opcode, wc[i].wr_id, wc[i].qp_num);
++  // }
++  // int random_number = rand() % 500;
++  // if (random_number == 0) {
++  //   INFO(NCCL_NET, "Node %d total %d cqes are polled", get_node_id(), total_cqes_polled);
++  // }
+   if (done < 0) {
+     WARN("Call to ibv_poll_cq() returned %d", done);
+     return ncclSystemError;
+@@ -70,6 +81,16 @@ ncclResult_t wrap_ibv_query_ece(struct ibv_qp *qp, struct ibv_ece *ece, int* sup
+ ncclResult_t wrap_ibv_set_ece(struct ibv_qp *qp, struct ibv_ece *ece, int* supported);
+ 
+ static inline ncclResult_t wrap_ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr, struct ibv_send_wr **bad_wr) {
++  ibv_send_wr *cur_wr = wr;
++  // INFO(NCCL_ALL,"====================================");
++  // for(;cur_wr;cur_wr=cur_wr->next) {
++  //   uint32_t total_len = 0;
++  //   for(int i=0;i<cur_wr->num_sge;i++) {
++  //     total_len += cur_wr->sg_list[i].length;
++  //   }
++  //   INFO(NCCL_ALL,"ibv_post_send qp_num = %d opcode = %d wr_id = %lu total_len = %lu IBV_SEND_SIGNALED = %s", qp->qp_num, cur_wr->opcode, cur_wr->wr_id, total_len, ((cur_wr->send_flags & IBV_SEND_SIGNALED) == IBV_SEND_SIGNALED) ? "true" : "false");
++  // }
++  // INFO(NCCL_ALL,"===================================="); 
+   int ret = qp->context->ops.post_send(qp, wr, bad_wr); /*returns 0 on success, or the value of errno on failure (which indicates the failure reason)*/
+   if (ret != IBV_SUCCESS) {
+     WARN("ibv_post_send() failed with error %s, Bad WR %p, First WR %p", strerror(ret), wr, *bad_wr);
+diff --git a/src/include/verbs.h b/src/include/verbs.h
+new file mode 100644
+index 00000000..f352885d
+--- /dev/null
++++ b/src/include/verbs.h
+@@ -0,0 +1,3611 @@
++/*
++ * Copyright (c) 2004, 2005 Topspin Communications.  All rights reserved.
++ * Copyright (c) 2004, 2011-2012 Intel Corporation.  All rights reserved.
++ * Copyright (c) 2005, 2006, 2007 Cisco Systems, Inc.  All rights reserved.
++ * Copyright (c) 2005 PathScale, Inc.  All rights reserved.
++ * Copyright (c) 2020 Intel Corporation.  All rights reserved.
++ *
++ * This software is available to you under a choice of one of two
++ * licenses.  You may choose to be licensed under the terms of the GNU
++ * General Public License (GPL) Version 2, available from the file
++ * COPYING in the main directory of this source tree, or the
++ * OpenIB.org BSD license below:
++ *
++ *     Redistribution and use in source and binary forms, with or
++ *     without modification, are permitted provided that the following
++ *     conditions are met:
++ *
++ *      - Redistributions of source code must retain the above
++ *        copyright notice, this list of conditions and the following
++ *        disclaimer.
++ *
++ *      - Redistributions in binary form must reproduce the above
++ *        copyright notice, this list of conditions and the following
++ *        disclaimer in the documentation and/or other materials
++ *        provided with the distribution.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
++ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
++ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
++ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
++ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++
++#ifndef INFINIBAND_VERBS_H
++#define INFINIBAND_VERBS_H
++
++#include "debug.h"
++
++#include <stdint.h>
++#include <pthread.h>
++#include <stddef.h>
++#include <errno.h>
++#include <string.h>
++#include <linux/types.h>
++#include <stdint.h>
++#include <sys/types.h>
++#include <infiniband/verbs_api.h>
++
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++
++#ifdef __cplusplus
++#include <limits>
++#endif
++
++#if __GNUC__ >= 3
++#  define __attribute_const __attribute__((const))
++#else
++#  define __attribute_const
++#endif
++
++#define SHM_NAME_PREFIX "shm_nccl_ns3_"
++#define METADATA_SEGMENT_NAME "metadata_libibverbs"
++#define POST_FIFO_IMM 15555
++
++extern boost::interprocess::managed_shared_memory *pSegment;
++
++
++#define NAME_LEN 40
++
++#define LOCK_MUTEX(x) boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scoped_lock_##x(*x##_mutex)
++#define CONSTRUCT_MUTEX(pshm, mutex_ptr) mutex_ptr = pshm->construct<boost::interprocess::interprocess_mutex>(#mutex_ptr)()
++#define FIND_MUTEX(pshm, mutex_ptr) mutex_ptr = pshm->find<boost::interprocess::interprocess_mutex>(#mutex_ptr).first
++#define FIND_AND_LOCK_MUTEX(pshm, mutex_ptr) \
++  { \
++    boost::interprocess::interprocess_mutex* mutex_ptr = pshm->find<boost::interprocess::interprocess_mutex>(#mutex_ptr).first; \
++    boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scoped_lock_##mutex_ptr(*mutex_ptr); \
++  }
++
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++
++union ibv_gid {
++	uint8_t			raw[16];
++	struct {
++		uint64_t	subnet_prefix;
++		uint64_t	interface_id;
++	} global;
++};
++
++enum ibv_gid_type {
++	IBV_GID_TYPE_IB,
++	IBV_GID_TYPE_ROCE_V1,
++	IBV_GID_TYPE_ROCE_V2,
++};
++
++struct ibv_gid_entry {
++	union ibv_gid gid;
++	uint32_t gid_index;
++	uint32_t port_num;
++	uint32_t gid_type; /* enum ibv_gid_type */
++	uint32_t ndev_ifindex;
++};
++
++#define vext_field_avail(type, fld, sz) (offsetof(type, fld) < (sz))
++
++#ifdef __cplusplus
++#define __VERBS_ABI_IS_EXTENDED ((void *)std::numeric_limits<uintptr_t>::max())
++#else
++#define __VERBS_ABI_IS_EXTENDED ((void *)UINTPTR_MAX)
++#endif
++
++enum ibv_node_type {
++	IBV_NODE_UNKNOWN	= -1,
++	IBV_NODE_CA 		= 1,
++	IBV_NODE_SWITCH,
++	IBV_NODE_ROUTER,
++	IBV_NODE_RNIC,
++	IBV_NODE_USNIC,
++	IBV_NODE_USNIC_UDP,
++	IBV_NODE_UNSPECIFIED,
++};
++
++enum ibv_transport_type {
++	IBV_TRANSPORT_UNKNOWN	= -1,
++	IBV_TRANSPORT_IB	= 0,
++	IBV_TRANSPORT_IWARP,
++	IBV_TRANSPORT_USNIC,
++	IBV_TRANSPORT_USNIC_UDP,
++	IBV_TRANSPORT_UNSPECIFIED,
++};
++
++enum ibv_device_cap_flags {
++	IBV_DEVICE_RESIZE_MAX_WR	= 1,
++	IBV_DEVICE_BAD_PKEY_CNTR	= 1 <<  1,
++	IBV_DEVICE_BAD_QKEY_CNTR	= 1 <<  2,
++	IBV_DEVICE_RAW_MULTI		= 1 <<  3,
++	IBV_DEVICE_AUTO_PATH_MIG	= 1 <<  4,
++	IBV_DEVICE_CHANGE_PHY_PORT	= 1 <<  5,
++	IBV_DEVICE_UD_AV_PORT_ENFORCE	= 1 <<  6,
++	IBV_DEVICE_CURR_QP_STATE_MOD	= 1 <<  7,
++	IBV_DEVICE_SHUTDOWN_PORT	= 1 <<  8,
++	IBV_DEVICE_INIT_TYPE		= 1 <<  9,
++	IBV_DEVICE_PORT_ACTIVE_EVENT	= 1 << 10,
++	IBV_DEVICE_SYS_IMAGE_GUID	= 1 << 11,
++	IBV_DEVICE_RC_RNR_NAK_GEN	= 1 << 12,
++	IBV_DEVICE_SRQ_RESIZE		= 1 << 13,
++	IBV_DEVICE_N_NOTIFY_CQ		= 1 << 14,
++	IBV_DEVICE_MEM_WINDOW           = 1 << 17,
++	IBV_DEVICE_UD_IP_CSUM		= 1 << 18,
++	IBV_DEVICE_XRC			= 1 << 20,
++	IBV_DEVICE_MEM_MGT_EXTENSIONS	= 1 << 21,
++	IBV_DEVICE_MEM_WINDOW_TYPE_2A	= 1 << 23,
++	IBV_DEVICE_MEM_WINDOW_TYPE_2B	= 1 << 24,
++	IBV_DEVICE_RC_IP_CSUM		= 1 << 25,
++	IBV_DEVICE_RAW_IP_CSUM		= 1 << 26,
++	IBV_DEVICE_MANAGED_FLOW_STEERING = 1 << 29
++};
++
++enum ibv_fork_status {
++	IBV_FORK_DISABLED,
++	IBV_FORK_ENABLED,
++	IBV_FORK_UNNEEDED,
++};
++
++/*
++ * Can't extended above ibv_device_cap_flags enum as in some systems/compilers
++ * enum range is limited to 4 bytes.
++ */
++#define IBV_DEVICE_RAW_SCATTER_FCS (1ULL << 34)
++#define IBV_DEVICE_PCI_WRITE_END_PADDING (1ULL << 36)
++
++enum ibv_atomic_cap {
++	IBV_ATOMIC_NONE,
++	IBV_ATOMIC_HCA,
++	IBV_ATOMIC_GLOB
++};
++
++struct ibv_alloc_dm_attr {
++	size_t length;
++	uint32_t log_align_req;
++	uint32_t comp_mask;
++};
++
++enum ibv_dm_mask {
++	IBV_DM_MASK_HANDLE = 1 << 0,
++};
++
++struct ibv_dm {
++	struct ibv_context *context;
++	int (*memcpy_to_dm)(struct ibv_dm *dm, uint64_t dm_offset,
++			    const void *host_addr, size_t length);
++	int (*memcpy_from_dm)(void *host_addr, struct ibv_dm *dm,
++			      uint64_t dm_offset, size_t length);
++	uint32_t comp_mask;
++
++	uint32_t handle;
++};
++
++struct ibv_device_attr {
++	char			fw_ver[64];
++	__be64			node_guid;
++	__be64			sys_image_guid;
++	uint64_t		max_mr_size;
++	uint64_t		page_size_cap;
++	uint32_t		vendor_id;
++	uint32_t		vendor_part_id;
++	uint32_t		hw_ver;
++	int			max_qp;
++	int			max_qp_wr;
++	unsigned int		device_cap_flags;
++	int			max_sge;
++	int			max_sge_rd;
++	int			max_cq;
++	int			max_cqe;
++	int			max_mr;
++	int			max_pd;
++	int			max_qp_rd_atom;
++	int			max_ee_rd_atom;
++	int			max_res_rd_atom;
++	int			max_qp_init_rd_atom;
++	int			max_ee_init_rd_atom;
++	enum ibv_atomic_cap	atomic_cap;
++	int			max_ee;
++	int			max_rdd;
++	int			max_mw;
++	int			max_raw_ipv6_qp;
++	int			max_raw_ethy_qp;
++	int			max_mcast_grp;
++	int			max_mcast_qp_attach;
++	int			max_total_mcast_qp_attach;
++	int			max_ah;
++	int			max_fmr;
++	int			max_map_per_fmr;
++	int			max_srq;
++	int			max_srq_wr;
++	int			max_srq_sge;
++	uint16_t		max_pkeys;
++	uint8_t			local_ca_ack_delay;
++	uint8_t			phys_port_cnt;
++};
++
++/* An extensible input struct for possible future extensions of the
++ * ibv_query_device_ex verb. */
++struct ibv_query_device_ex_input {
++	uint32_t		comp_mask;
++};
++
++enum ibv_odp_transport_cap_bits {
++	IBV_ODP_SUPPORT_SEND     = 1 << 0,
++	IBV_ODP_SUPPORT_RECV     = 1 << 1,
++	IBV_ODP_SUPPORT_WRITE    = 1 << 2,
++	IBV_ODP_SUPPORT_READ     = 1 << 3,
++	IBV_ODP_SUPPORT_ATOMIC   = 1 << 4,
++	IBV_ODP_SUPPORT_SRQ_RECV = 1 << 5,
++};
++
++struct ibv_odp_caps {
++	uint64_t general_caps;
++	struct {
++		uint32_t rc_odp_caps;
++		uint32_t uc_odp_caps;
++		uint32_t ud_odp_caps;
++	} per_transport_caps;
++};
++
++enum ibv_odp_general_caps {
++	IBV_ODP_SUPPORT = 1 << 0,
++	IBV_ODP_SUPPORT_IMPLICIT = 1 << 1,
++};
++
++struct ibv_tso_caps {
++	uint32_t max_tso;
++	uint32_t supported_qpts;
++};
++
++/* RX Hash function flags */
++enum ibv_rx_hash_function_flags {
++	IBV_RX_HASH_FUNC_TOEPLITZ	= 1 << 0,
++};
++
++/*
++ * RX Hash fields enable to set which incoming packet's field should
++ * participates in RX Hash. Each flag represent certain packet's field,
++ * when the flag is set the field that is represented by the flag will
++ * participate in RX Hash calculation.
++ * Note: *IPV4 and *IPV6 flags can't be enabled together on the same QP
++ * and *TCP and *UDP flags can't be enabled together on the same QP.
++*/
++enum ibv_rx_hash_fields {
++	IBV_RX_HASH_SRC_IPV4	= 1 << 0,
++	IBV_RX_HASH_DST_IPV4	= 1 << 1,
++	IBV_RX_HASH_SRC_IPV6	= 1 << 2,
++	IBV_RX_HASH_DST_IPV6	= 1 << 3,
++	IBV_RX_HASH_SRC_PORT_TCP	= 1 << 4,
++	IBV_RX_HASH_DST_PORT_TCP	= 1 << 5,
++	IBV_RX_HASH_SRC_PORT_UDP	= 1 << 6,
++	IBV_RX_HASH_DST_PORT_UDP	= 1 << 7,
++	IBV_RX_HASH_IPSEC_SPI		= 1 << 8,
++	IBV_RX_HASH_INNER		= (1UL << 31),
++};
++
++struct ibv_rss_caps {
++	uint32_t supported_qpts;
++	uint32_t max_rwq_indirection_tables;
++	uint32_t max_rwq_indirection_table_size;
++	uint64_t rx_hash_fields_mask; /* enum ibv_rx_hash_fields */
++	uint8_t  rx_hash_function; /* enum ibv_rx_hash_function_flags */
++};
++
++struct ibv_packet_pacing_caps {
++	uint32_t qp_rate_limit_min;
++	uint32_t qp_rate_limit_max; /* In kbps */
++	uint32_t supported_qpts;
++};
++
++enum ibv_raw_packet_caps {
++	IBV_RAW_PACKET_CAP_CVLAN_STRIPPING	= 1 << 0,
++	IBV_RAW_PACKET_CAP_SCATTER_FCS		= 1 << 1,
++	IBV_RAW_PACKET_CAP_IP_CSUM		= 1 << 2,
++	IBV_RAW_PACKET_CAP_DELAY_DROP		= 1 << 3,
++};
++
++enum ibv_tm_cap_flags {
++	IBV_TM_CAP_RC		    = 1 << 0,
++};
++
++struct ibv_tm_caps {
++	/* Max size of rendezvous request header */
++	uint32_t max_rndv_hdr_size;
++	/* Max number of tagged buffers in a TM-SRQ matching list */
++	uint32_t max_num_tags;
++	/* From enum ibv_tm_cap_flags */
++	uint32_t flags;
++	/* Max number of outstanding list operations */
++	uint32_t max_ops;
++	/* Max number of SGEs in a tagged buffer */
++	uint32_t max_sge;
++};
++
++struct ibv_cq_moderation_caps {
++	uint16_t max_cq_count;
++	uint16_t max_cq_period; /* in micro seconds */
++};
++
++enum ibv_pci_atomic_op_size {
++	IBV_PCI_ATOMIC_OPERATION_4_BYTE_SIZE_SUP = 1 << 0,
++	IBV_PCI_ATOMIC_OPERATION_8_BYTE_SIZE_SUP = 1 << 1,
++	IBV_PCI_ATOMIC_OPERATION_16_BYTE_SIZE_SUP = 1 << 2,
++};
++
++/*
++ * Bitmask for supported operation sizes
++ * Use enum ibv_pci_atomic_op_size
++ */
++struct ibv_pci_atomic_caps {
++	uint16_t fetch_add;
++	uint16_t swap;
++	uint16_t compare_swap;
++};
++
++struct ibv_device_attr_ex {
++	struct ibv_device_attr	orig_attr;
++	uint32_t		comp_mask;
++	struct ibv_odp_caps	odp_caps;
++	uint64_t		completion_timestamp_mask;
++	uint64_t		hca_core_clock;
++	uint64_t		device_cap_flags_ex;
++	struct ibv_tso_caps	tso_caps;
++	struct ibv_rss_caps     rss_caps;
++	uint32_t		max_wq_type_rq;
++	struct ibv_packet_pacing_caps packet_pacing_caps;
++	uint32_t		raw_packet_caps; /* Use ibv_raw_packet_caps */
++	struct ibv_tm_caps	tm_caps;
++	struct ibv_cq_moderation_caps  cq_mod_caps;
++	uint64_t max_dm_size;
++	struct ibv_pci_atomic_caps pci_atomic_caps;
++	uint32_t xrc_odp_caps;
++	uint32_t phys_port_cnt_ex;
++};
++
++enum ibv_mtu {
++	IBV_MTU_256  = 1,
++	IBV_MTU_512  = 2,
++	IBV_MTU_1024 = 3,
++	IBV_MTU_2048 = 4,
++	IBV_MTU_4096 = 5
++};
++
++enum ibv_port_state {
++	IBV_PORT_NOP		= 0,
++	IBV_PORT_DOWN		= 1,
++	IBV_PORT_INIT		= 2,
++	IBV_PORT_ARMED		= 3,
++	IBV_PORT_ACTIVE		= 4,
++	IBV_PORT_ACTIVE_DEFER	= 5
++};
++
++enum {
++	IBV_LINK_LAYER_UNSPECIFIED,
++	IBV_LINK_LAYER_INFINIBAND,
++	IBV_LINK_LAYER_ETHERNET,
++};
++
++enum ibv_port_cap_flags {
++	IBV_PORT_SM				= 1 <<  1,
++	IBV_PORT_NOTICE_SUP			= 1 <<  2,
++	IBV_PORT_TRAP_SUP			= 1 <<  3,
++	IBV_PORT_OPT_IPD_SUP			= 1 <<  4,
++	IBV_PORT_AUTO_MIGR_SUP			= 1 <<  5,
++	IBV_PORT_SL_MAP_SUP			= 1 <<  6,
++	IBV_PORT_MKEY_NVRAM			= 1 <<  7,
++	IBV_PORT_PKEY_NVRAM			= 1 <<  8,
++	IBV_PORT_LED_INFO_SUP			= 1 <<  9,
++	IBV_PORT_SYS_IMAGE_GUID_SUP		= 1 << 11,
++	IBV_PORT_PKEY_SW_EXT_PORT_TRAP_SUP	= 1 << 12,
++	IBV_PORT_EXTENDED_SPEEDS_SUP		= 1 << 14,
++	IBV_PORT_CAP_MASK2_SUP			= 1 << 15,
++	IBV_PORT_CM_SUP				= 1 << 16,
++	IBV_PORT_SNMP_TUNNEL_SUP		= 1 << 17,
++	IBV_PORT_REINIT_SUP			= 1 << 18,
++	IBV_PORT_DEVICE_MGMT_SUP		= 1 << 19,
++	IBV_PORT_VENDOR_CLASS_SUP		= 1 << 20,
++	IBV_PORT_DR_NOTICE_SUP			= 1 << 21,
++	IBV_PORT_CAP_MASK_NOTICE_SUP		= 1 << 22,
++	IBV_PORT_BOOT_MGMT_SUP			= 1 << 23,
++	IBV_PORT_LINK_LATENCY_SUP		= 1 << 24,
++	IBV_PORT_CLIENT_REG_SUP			= 1 << 25,
++	IBV_PORT_IP_BASED_GIDS			= 1 << 26
++};
++
++enum ibv_port_cap_flags2 {
++	IBV_PORT_SET_NODE_DESC_SUP		= 1 << 0,
++	IBV_PORT_INFO_EXT_SUP			= 1 << 1,
++	IBV_PORT_VIRT_SUP			= 1 << 2,
++	IBV_PORT_SWITCH_PORT_STATE_TABLE_SUP	= 1 << 3,
++	IBV_PORT_LINK_WIDTH_2X_SUP		= 1 << 4,
++	IBV_PORT_LINK_SPEED_HDR_SUP		= 1 << 5,
++	IBV_PORT_LINK_SPEED_NDR_SUP		= 1 << 10,
++};
++
++struct ibv_port_attr {
++	enum ibv_port_state	state;
++	enum ibv_mtu		max_mtu;
++	enum ibv_mtu		active_mtu;
++	int			gid_tbl_len;
++	uint32_t		port_cap_flags;
++	uint32_t		max_msg_sz;
++	uint32_t		bad_pkey_cntr;
++	uint32_t		qkey_viol_cntr;
++	uint16_t		pkey_tbl_len;
++	uint16_t		lid;
++	uint16_t		sm_lid;
++	uint8_t			lmc;
++	uint8_t			max_vl_num;
++	uint8_t			sm_sl;
++	uint8_t			subnet_timeout;
++	uint8_t			init_type_reply;
++	uint8_t			active_width;
++	uint8_t			active_speed;
++	uint8_t			phys_state;
++	uint8_t			link_layer;
++	uint8_t			flags;
++	uint16_t		port_cap_flags2;
++};
++
++enum ibv_event_type {
++	IBV_EVENT_CQ_ERR,
++	IBV_EVENT_QP_FATAL,
++	IBV_EVENT_QP_REQ_ERR,
++	IBV_EVENT_QP_ACCESS_ERR,
++	IBV_EVENT_COMM_EST,
++	IBV_EVENT_SQ_DRAINED,
++	IBV_EVENT_PATH_MIG,
++	IBV_EVENT_PATH_MIG_ERR,
++	IBV_EVENT_DEVICE_FATAL,
++	IBV_EVENT_PORT_ACTIVE,
++	IBV_EVENT_PORT_ERR,
++	IBV_EVENT_LID_CHANGE,
++	IBV_EVENT_PKEY_CHANGE,
++	IBV_EVENT_SM_CHANGE,
++	IBV_EVENT_SRQ_ERR,
++	IBV_EVENT_SRQ_LIMIT_REACHED,
++	IBV_EVENT_QP_LAST_WQE_REACHED,
++	IBV_EVENT_CLIENT_REREGISTER,
++	IBV_EVENT_GID_CHANGE,
++	IBV_EVENT_WQ_FATAL,
++};
++
++struct ibv_async_event {
++	union {
++		struct ibv_cq  *cq;
++		struct ibv_qp  *qp;
++		struct ibv_srq *srq;
++		struct ibv_wq  *wq;
++		int		port_num;
++	} element;
++	enum ibv_event_type	event_type;
++};
++
++enum ibv_wc_status {
++	IBV_WC_SUCCESS,
++	IBV_WC_LOC_LEN_ERR,
++	IBV_WC_LOC_QP_OP_ERR,
++	IBV_WC_LOC_EEC_OP_ERR,
++	IBV_WC_LOC_PROT_ERR,
++	IBV_WC_WR_FLUSH_ERR,
++	IBV_WC_MW_BIND_ERR,
++	IBV_WC_BAD_RESP_ERR,
++	IBV_WC_LOC_ACCESS_ERR,
++	IBV_WC_REM_INV_REQ_ERR,
++	IBV_WC_REM_ACCESS_ERR,
++	IBV_WC_REM_OP_ERR,
++	IBV_WC_RETRY_EXC_ERR,
++	IBV_WC_RNR_RETRY_EXC_ERR,
++	IBV_WC_LOC_RDD_VIOL_ERR,
++	IBV_WC_REM_INV_RD_REQ_ERR,
++	IBV_WC_REM_ABORT_ERR,
++	IBV_WC_INV_EECN_ERR,
++	IBV_WC_INV_EEC_STATE_ERR,
++	IBV_WC_FATAL_ERR,
++	IBV_WC_RESP_TIMEOUT_ERR,
++	IBV_WC_GENERAL_ERR,
++	IBV_WC_TM_ERR,
++	IBV_WC_TM_RNDV_INCOMPLETE,
++};
++const char *ibv_wc_status_str(enum ibv_wc_status status);
++
++enum ibv_wc_opcode {
++	IBV_WC_SEND,
++	IBV_WC_RDMA_WRITE,
++	IBV_WC_RDMA_READ,
++	IBV_WC_COMP_SWAP,
++	IBV_WC_FETCH_ADD,
++	IBV_WC_BIND_MW,
++	IBV_WC_LOCAL_INV,
++	IBV_WC_TSO,
++	IBV_WC_FLUSH,
++	IBV_WC_ATOMIC_WRITE = 9,
++/*
++ * Set value of IBV_WC_RECV so consumers can test if a completion is a
++ * receive by testing (opcode & IBV_WC_RECV).
++ */
++	IBV_WC_RECV			= 1 << 7,
++	IBV_WC_RECV_RDMA_WITH_IMM,
++
++	IBV_WC_TM_ADD,
++	IBV_WC_TM_DEL,
++	IBV_WC_TM_SYNC,
++	IBV_WC_TM_RECV,
++	IBV_WC_TM_NO_TAG,
++	IBV_WC_DRIVER1,
++	IBV_WC_DRIVER2,
++	IBV_WC_DRIVER3,
++};
++
++enum {
++	IBV_WC_IP_CSUM_OK_SHIFT	= 2
++};
++
++enum ibv_create_cq_wc_flags {
++	IBV_WC_EX_WITH_BYTE_LEN		= 1 << 0,
++	IBV_WC_EX_WITH_IMM		= 1 << 1,
++	IBV_WC_EX_WITH_QP_NUM		= 1 << 2,
++	IBV_WC_EX_WITH_SRC_QP		= 1 << 3,
++	IBV_WC_EX_WITH_SLID		= 1 << 4,
++	IBV_WC_EX_WITH_SL		= 1 << 5,
++	IBV_WC_EX_WITH_DLID_PATH_BITS	= 1 << 6,
++	IBV_WC_EX_WITH_COMPLETION_TIMESTAMP	= 1 << 7,
++	IBV_WC_EX_WITH_CVLAN		= 1 << 8,
++	IBV_WC_EX_WITH_FLOW_TAG		= 1 << 9,
++	IBV_WC_EX_WITH_TM_INFO		= 1 << 10,
++	IBV_WC_EX_WITH_COMPLETION_TIMESTAMP_WALLCLOCK	= 1 << 11,
++};
++
++enum {
++	IBV_WC_STANDARD_FLAGS = IBV_WC_EX_WITH_BYTE_LEN		|
++				 IBV_WC_EX_WITH_IMM		|
++				 IBV_WC_EX_WITH_QP_NUM		|
++				 IBV_WC_EX_WITH_SRC_QP		|
++				 IBV_WC_EX_WITH_SLID		|
++				 IBV_WC_EX_WITH_SL		|
++				 IBV_WC_EX_WITH_DLID_PATH_BITS
++};
++
++enum {
++	IBV_CREATE_CQ_SUP_WC_FLAGS = IBV_WC_STANDARD_FLAGS |
++				IBV_WC_EX_WITH_COMPLETION_TIMESTAMP |
++				IBV_WC_EX_WITH_CVLAN |
++				IBV_WC_EX_WITH_FLOW_TAG |
++				IBV_WC_EX_WITH_TM_INFO |
++				IBV_WC_EX_WITH_COMPLETION_TIMESTAMP_WALLCLOCK
++};
++
++enum ibv_wc_flags {
++	IBV_WC_GRH		= 1 << 0,
++	IBV_WC_WITH_IMM		= 1 << 1,
++	IBV_WC_IP_CSUM_OK	= 1 << IBV_WC_IP_CSUM_OK_SHIFT,
++	IBV_WC_WITH_INV		= 1 << 3,
++	IBV_WC_TM_SYNC_REQ	= 1 << 4,
++	IBV_WC_TM_MATCH		= 1 << 5,
++	IBV_WC_TM_DATA_VALID	= 1 << 6,
++};
++
++struct ibv_wc {
++	uint64_t		wr_id;
++	enum ibv_wc_status	status;
++	enum ibv_wc_opcode	opcode;
++	uint32_t		vendor_err;
++	uint32_t		byte_len;
++	/* When (wc_flags & IBV_WC_WITH_IMM): Immediate data in network byte order.
++	 * When (wc_flags & IBV_WC_WITH_INV): Stores the invalidated rkey.
++	 */
++	union {
++		__be32		imm_data;
++		uint32_t	invalidated_rkey;
++	};
++	uint32_t		qp_num;
++	uint32_t		src_qp;
++	unsigned int		wc_flags;
++	uint16_t		pkey_index;
++	uint16_t		slid;
++	uint8_t			sl;
++	uint8_t			dlid_path_bits;
++};
++
++struct shm_ibv_wc {
++	uint64_t		wr_id;
++	enum ibv_wc_status	status;
++	enum ibv_wc_opcode	opcode;
++	uint32_t		vendor_err;
++	uint32_t		byte_len;
++	uint32_t		imm_data;	/* in network byte order */
++	uint32_t		qp_num;
++	uint32_t		src_qp;
++	int			wc_flags;
++	uint16_t		pkey_index;
++	uint16_t		slid;
++	uint8_t			sl;
++	uint8_t			dlid_path_bits;	
++};
++
++enum ibv_access_flags {
++	IBV_ACCESS_LOCAL_WRITE		= 1,
++	IBV_ACCESS_REMOTE_WRITE		= (1<<1),
++	IBV_ACCESS_REMOTE_READ		= (1<<2),
++	IBV_ACCESS_REMOTE_ATOMIC	= (1<<3),
++	IBV_ACCESS_MW_BIND		= (1<<4),
++	IBV_ACCESS_ZERO_BASED		= (1<<5),
++	IBV_ACCESS_ON_DEMAND		= (1<<6),
++	IBV_ACCESS_HUGETLB		= (1<<7),
++	IBV_ACCESS_FLUSH_GLOBAL		= (1 << 8),
++	IBV_ACCESS_FLUSH_PERSISTENT	= (1 << 9),
++	IBV_ACCESS_RELAXED_ORDERING	= IBV_ACCESS_OPTIONAL_FIRST,
++};
++
++struct ibv_mw_bind_info {
++	struct ibv_mr	*mr;
++	uint64_t	 addr;
++	uint64_t	 length;
++	unsigned int	 mw_access_flags; /* use ibv_access_flags */
++};
++
++struct ibv_pd {
++	struct ibv_context     *context;
++	uint32_t		handle;
++};
++
++struct ibv_td_init_attr {
++	uint32_t comp_mask;
++};
++
++struct ibv_td {
++	struct ibv_context     *context;
++};
++
++enum ibv_xrcd_init_attr_mask {
++	IBV_XRCD_INIT_ATTR_FD	    = 1 << 0,
++	IBV_XRCD_INIT_ATTR_OFLAGS   = 1 << 1,
++	IBV_XRCD_INIT_ATTR_RESERVED = 1 << 2
++};
++
++struct ibv_xrcd_init_attr {
++	uint32_t comp_mask;
++	int	 fd;
++	int	 oflags;
++};
++
++struct ibv_xrcd {
++	struct ibv_context     *context;
++};
++
++enum ibv_rereg_mr_flags {
++	IBV_REREG_MR_CHANGE_TRANSLATION	= (1 << 0),
++	IBV_REREG_MR_CHANGE_PD		= (1 << 1),
++	IBV_REREG_MR_CHANGE_ACCESS	= (1 << 2),
++	IBV_REREG_MR_FLAGS_SUPPORTED	= ((IBV_REREG_MR_CHANGE_ACCESS << 1) - 1)
++};
++
++struct ibv_mr {
++	struct ibv_context     *context;
++	struct ibv_pd	       *pd;
++	void		       *addr;
++	size_t			length;
++	uint32_t		handle;
++	uint32_t		lkey;
++	uint32_t		rkey;
++};
++
++enum ibv_mw_type {
++	IBV_MW_TYPE_1			= 1,
++	IBV_MW_TYPE_2			= 2
++};
++
++struct ibv_mw {
++	struct ibv_context     *context;
++	struct ibv_pd	       *pd;
++	uint32_t		rkey;
++	uint32_t		handle;
++	enum ibv_mw_type	type;
++};
++
++struct ibv_global_route {
++	union ibv_gid		dgid;
++	uint32_t		flow_label;
++	uint8_t			sgid_index;
++	uint8_t			hop_limit;
++	uint8_t			traffic_class;
++};
++
++struct ibv_grh {
++	__be32			version_tclass_flow;
++	__be16			paylen;
++	uint8_t			next_hdr;
++	uint8_t			hop_limit;
++	union ibv_gid		sgid;
++	union ibv_gid		dgid;
++};
++
++enum ibv_rate {
++	IBV_RATE_MAX      = 0,
++	IBV_RATE_2_5_GBPS = 2,
++	IBV_RATE_5_GBPS   = 5,
++	IBV_RATE_10_GBPS  = 3,
++	IBV_RATE_20_GBPS  = 6,
++	IBV_RATE_30_GBPS  = 4,
++	IBV_RATE_40_GBPS  = 7,
++	IBV_RATE_60_GBPS  = 8,
++	IBV_RATE_80_GBPS  = 9,
++	IBV_RATE_120_GBPS = 10,
++	IBV_RATE_14_GBPS  = 11,
++	IBV_RATE_56_GBPS  = 12,
++	IBV_RATE_112_GBPS = 13,
++	IBV_RATE_168_GBPS = 14,
++	IBV_RATE_25_GBPS  = 15,
++	IBV_RATE_100_GBPS = 16,
++	IBV_RATE_200_GBPS = 17,
++	IBV_RATE_300_GBPS = 18,
++	IBV_RATE_28_GBPS  = 19,
++	IBV_RATE_50_GBPS  = 20,
++	IBV_RATE_400_GBPS = 21,
++	IBV_RATE_600_GBPS = 22,
++	IBV_RATE_800_GBPS = 23,
++	IBV_RATE_1200_GBPS = 24,
++};
++
++int get_node_id();
++int get_gpus_per_server();
++
++/**
++ * ibv_rate_to_mult - Convert the IB rate enum to a multiple of the
++ * base rate of 2.5 Gbit/sec.  For example, IBV_RATE_5_GBPS will be
++ * converted to 2, since 5 Gbit/sec is 2 * 2.5 Gbit/sec.
++ * @rate: rate to convert.
++ */
++int  __attribute_const ibv_rate_to_mult(enum ibv_rate rate);
++
++/**
++ * mult_to_ibv_rate - Convert a multiple of 2.5 Gbit/sec to an IB rate enum.
++ * @mult: multiple to convert.
++ */
++enum ibv_rate __attribute_const mult_to_ibv_rate(int mult);
++
++/**
++ * ibv_rate_to_mbps - Convert the IB rate enum to Mbit/sec.
++ * For example, IBV_RATE_5_GBPS will return the value 5000.
++ * @rate: rate to convert.
++ */
++int __attribute_const ibv_rate_to_mbps(enum ibv_rate rate);
++
++/**
++ * mbps_to_ibv_rate - Convert a Mbit/sec value to an IB rate enum.
++ * @mbps: value to convert.
++ */
++enum ibv_rate __attribute_const mbps_to_ibv_rate(int mbps);
++
++struct ibv_ah_attr {
++	struct ibv_global_route	grh;
++	uint16_t		dlid;
++	uint8_t			sl;
++	uint8_t			src_path_bits;
++	uint8_t			static_rate;
++	uint8_t			is_global;
++	uint8_t			port_num;
++};
++
++enum ibv_srq_attr_mask {
++	IBV_SRQ_MAX_WR	= 1 << 0,
++	IBV_SRQ_LIMIT	= 1 << 1
++};
++
++struct ibv_srq_attr {
++	uint32_t		max_wr;
++	uint32_t		max_sge;
++	uint32_t		srq_limit;
++};
++
++struct ibv_srq_init_attr {
++	void		       *srq_context;
++	struct ibv_srq_attr	attr;
++};
++
++enum ibv_srq_type {
++	IBV_SRQT_BASIC,
++	IBV_SRQT_XRC,
++	IBV_SRQT_TM,
++};
++
++enum ibv_srq_init_attr_mask {
++	IBV_SRQ_INIT_ATTR_TYPE		= 1 << 0,
++	IBV_SRQ_INIT_ATTR_PD		= 1 << 1,
++	IBV_SRQ_INIT_ATTR_XRCD		= 1 << 2,
++	IBV_SRQ_INIT_ATTR_CQ		= 1 << 3,
++	IBV_SRQ_INIT_ATTR_TM		= 1 << 4,
++	IBV_SRQ_INIT_ATTR_RESERVED	= 1 << 5,
++};
++
++struct ibv_tm_cap {
++	uint32_t		max_num_tags;
++	uint32_t		max_ops;
++};
++
++struct ibv_srq_init_attr_ex {
++	void		       *srq_context;
++	struct ibv_srq_attr	attr;
++
++	uint32_t		comp_mask;
++	enum ibv_srq_type	srq_type;
++	struct ibv_pd	       *pd;
++	struct ibv_xrcd	       *xrcd;
++	struct ibv_cq	       *cq;
++	struct ibv_tm_cap	tm_cap;
++};
++
++enum ibv_wq_type {
++	IBV_WQT_RQ
++};
++
++enum ibv_wq_init_attr_mask {
++	IBV_WQ_INIT_ATTR_FLAGS		= 1 << 0,
++	IBV_WQ_INIT_ATTR_RESERVED	= 1 << 1,
++};
++
++enum ibv_wq_flags {
++	IBV_WQ_FLAGS_CVLAN_STRIPPING		= 1 << 0,
++	IBV_WQ_FLAGS_SCATTER_FCS		= 1 << 1,
++	IBV_WQ_FLAGS_DELAY_DROP			= 1 << 2,
++	IBV_WQ_FLAGS_PCI_WRITE_END_PADDING	= 1 << 3,
++	IBV_WQ_FLAGS_RESERVED			= 1 << 4,
++};
++
++struct ibv_wq_init_attr {
++	void		       *wq_context;
++	enum ibv_wq_type	wq_type;
++	uint32_t		max_wr;
++	uint32_t		max_sge;
++	struct	ibv_pd	       *pd;
++	struct	ibv_cq	       *cq;
++	uint32_t		comp_mask; /* Use ibv_wq_init_attr_mask */
++	uint32_t		create_flags; /* use ibv_wq_flags */
++};
++
++enum ibv_wq_state {
++	IBV_WQS_RESET,
++	IBV_WQS_RDY,
++	IBV_WQS_ERR,
++	IBV_WQS_UNKNOWN
++};
++
++enum ibv_wq_attr_mask {
++	IBV_WQ_ATTR_STATE	= 1 << 0,
++	IBV_WQ_ATTR_CURR_STATE	= 1 << 1,
++	IBV_WQ_ATTR_FLAGS	= 1 << 2,
++	IBV_WQ_ATTR_RESERVED	= 1 << 3,
++};
++
++struct ibv_wq_attr {
++	/* enum ibv_wq_attr_mask */
++	uint32_t		attr_mask;
++	/* Move the WQ to this state */
++	enum	ibv_wq_state	wq_state;
++	/* Assume this is the current WQ state */
++	enum	ibv_wq_state	curr_wq_state;
++	uint32_t		flags; /* Use ibv_wq_flags */
++	uint32_t		flags_mask; /* Use ibv_wq_flags */
++};
++
++/*
++ * Receive Work Queue Indirection Table.
++ * It's used in order to distribute incoming packets between different
++ * Receive Work Queues. Associating Receive WQs with different CPU cores
++ * allows one to workload the traffic between different CPU cores.
++ * The Indirection Table can contain only WQs of type IBV_WQT_RQ.
++*/
++struct ibv_rwq_ind_table {
++	struct ibv_context *context;
++	int ind_tbl_handle;
++	int ind_tbl_num;
++	uint32_t comp_mask;
++};
++
++enum ibv_ind_table_init_attr_mask {
++	IBV_CREATE_IND_TABLE_RESERVED = (1 << 0)
++};
++
++/*
++ * Receive Work Queue Indirection Table attributes
++ */
++struct ibv_rwq_ind_table_init_attr {
++	uint32_t log_ind_tbl_size;
++	/* Each entry is a pointer to a Receive Work Queue */
++	struct ibv_wq **ind_tbl;
++	uint32_t comp_mask;
++};
++
++enum ibv_qp_type {
++	IBV_QPT_RC = 2,
++	IBV_QPT_UC,
++	IBV_QPT_UD,
++	IBV_QPT_RAW_PACKET = 8,
++	IBV_QPT_XRC_SEND = 9,
++	IBV_QPT_XRC_RECV,
++	IBV_QPT_DRIVER = 0xff,
++};
++
++struct ibv_qp_cap {
++	uint32_t		max_send_wr;
++	uint32_t		max_recv_wr;
++	uint32_t		max_send_sge;
++	uint32_t		max_recv_sge;
++	uint32_t		max_inline_data;
++};
++
++struct ibv_qp_init_attr {
++	void		       *qp_context;
++	struct ibv_cq	       *send_cq;
++	struct ibv_cq	       *recv_cq;
++	struct ibv_srq	       *srq;
++	struct ibv_qp_cap	cap;
++	enum ibv_qp_type	qp_type;
++	int			sq_sig_all;
++};
++
++struct shm_ibv_qp_init_attr {
++	char shm_send_cq_name[40];
++	char shm_recv_cq_name[40];
++	struct ibv_qp_cap	cap;
++	enum ibv_qp_type	qp_type;
++	int			sq_sig_all;
++
++};
++
++// struct ibv_qp {
++// 	struct ibv_context     *context;
++// 	void		       *qp_context;
++// 	struct ibv_pd	       *pd;
++// 	struct ibv_cq	       *send_cq;
++// 	struct ibv_cq	       *recv_cq;
++// 	struct ibv_srq	       *srq;
++// 	uint32_t		handle;
++// 	uint32_t		qp_num;
++// 	enum ibv_qp_state       state;
++// 	enum ibv_qp_type	qp_type;
++
++// 	pthread_mutex_t		mutex;
++// 	pthread_cond_t		cond;
++// 	uint32_t		events_completed;
++// };
++
++enum ibv_qp_init_attr_mask {
++	IBV_QP_INIT_ATTR_PD		= 1 << 0,
++	IBV_QP_INIT_ATTR_XRCD		= 1 << 1,
++	IBV_QP_INIT_ATTR_CREATE_FLAGS	= 1 << 2,
++	IBV_QP_INIT_ATTR_MAX_TSO_HEADER = 1 << 3,
++	IBV_QP_INIT_ATTR_IND_TABLE	= 1 << 4,
++	IBV_QP_INIT_ATTR_RX_HASH	= 1 << 5,
++	IBV_QP_INIT_ATTR_SEND_OPS_FLAGS = 1 << 6,
++};
++
++enum ibv_qp_create_flags {
++	IBV_QP_CREATE_BLOCK_SELF_MCAST_LB	= 1 << 1,
++	IBV_QP_CREATE_SCATTER_FCS		= 1 << 8,
++	IBV_QP_CREATE_CVLAN_STRIPPING		= 1 << 9,
++	IBV_QP_CREATE_SOURCE_QPN		= 1 << 10,
++	IBV_QP_CREATE_PCI_WRITE_END_PADDING	= 1 << 11,
++};
++
++enum ibv_qp_create_send_ops_flags {
++	IBV_QP_EX_WITH_RDMA_WRITE		= 1 << 0,
++	IBV_QP_EX_WITH_RDMA_WRITE_WITH_IMM	= 1 << 1,
++	IBV_QP_EX_WITH_SEND			= 1 << 2,
++	IBV_QP_EX_WITH_SEND_WITH_IMM		= 1 << 3,
++	IBV_QP_EX_WITH_RDMA_READ		= 1 << 4,
++	IBV_QP_EX_WITH_ATOMIC_CMP_AND_SWP	= 1 << 5,
++	IBV_QP_EX_WITH_ATOMIC_FETCH_AND_ADD	= 1 << 6,
++	IBV_QP_EX_WITH_LOCAL_INV		= 1 << 7,
++	IBV_QP_EX_WITH_BIND_MW			= 1 << 8,
++	IBV_QP_EX_WITH_SEND_WITH_INV		= 1 << 9,
++	IBV_QP_EX_WITH_TSO			= 1 << 10,
++	IBV_QP_EX_WITH_FLUSH			= 1 << 11,
++	IBV_QP_EX_WITH_ATOMIC_WRITE		= 1 << 12,
++};
++
++struct ibv_rx_hash_conf {
++	/* enum ibv_rx_hash_function_flags */
++	uint8_t	rx_hash_function;
++	uint8_t	rx_hash_key_len;
++	uint8_t	*rx_hash_key;
++	/* enum ibv_rx_hash_fields */
++	uint64_t	rx_hash_fields_mask;
++};
++
++struct ibv_qp_init_attr_ex {
++	void		       *qp_context;
++	struct ibv_cq	       *send_cq;
++	struct ibv_cq	       *recv_cq;
++	struct ibv_srq	       *srq;
++	struct ibv_qp_cap	cap;
++	enum ibv_qp_type	qp_type;
++	int			sq_sig_all;
++
++	uint32_t		comp_mask;
++	struct ibv_pd	       *pd;
++	struct ibv_xrcd	       *xrcd;
++	uint32_t                create_flags;
++	uint16_t		max_tso_header;
++	struct ibv_rwq_ind_table       *rwq_ind_tbl;
++	struct ibv_rx_hash_conf	rx_hash_conf;
++	uint32_t		source_qpn;
++	/* See enum ibv_qp_create_send_ops_flags */
++	uint64_t send_ops_flags;
++};
++
++enum ibv_qp_open_attr_mask {
++	IBV_QP_OPEN_ATTR_NUM		= 1 << 0,
++	IBV_QP_OPEN_ATTR_XRCD	        = 1 << 1,
++	IBV_QP_OPEN_ATTR_CONTEXT	= 1 << 2,
++	IBV_QP_OPEN_ATTR_TYPE		= 1 << 3,
++	IBV_QP_OPEN_ATTR_RESERVED	= 1 << 4
++};
++
++struct ibv_qp_open_attr {
++	uint32_t		comp_mask;
++	uint32_t		qp_num;
++	struct ibv_xrcd        *xrcd;
++	void		       *qp_context;
++	enum ibv_qp_type	qp_type;
++};
++
++enum ibv_qp_attr_mask {
++	IBV_QP_STATE			= 1 << 	0,
++	IBV_QP_CUR_STATE		= 1 << 	1,
++	IBV_QP_EN_SQD_ASYNC_NOTIFY	= 1 << 	2,
++	IBV_QP_ACCESS_FLAGS		= 1 << 	3,
++	IBV_QP_PKEY_INDEX		= 1 << 	4,
++	IBV_QP_PORT			= 1 << 	5,
++	IBV_QP_QKEY			= 1 << 	6,
++	IBV_QP_AV			= 1 << 	7,
++	IBV_QP_PATH_MTU			= 1 << 	8,
++	IBV_QP_TIMEOUT			= 1 << 	9,
++	IBV_QP_RETRY_CNT		= 1 << 10,
++	IBV_QP_RNR_RETRY		= 1 << 11,
++	IBV_QP_RQ_PSN			= 1 << 12,
++	IBV_QP_MAX_QP_RD_ATOMIC		= 1 << 13,
++	IBV_QP_ALT_PATH			= 1 << 14,
++	IBV_QP_MIN_RNR_TIMER		= 1 << 15,
++	IBV_QP_SQ_PSN			= 1 << 16,
++	IBV_QP_MAX_DEST_RD_ATOMIC	= 1 << 17,
++	IBV_QP_PATH_MIG_STATE		= 1 << 18,
++	IBV_QP_CAP			= 1 << 19,
++	IBV_QP_DEST_QPN			= 1 << 20,
++	/* These bits were supported on older kernels, but never exposed from
++	   libibverbs:
++	_IBV_QP_SMAC   			= 1 << 21,
++	_IBV_QP_ALT_SMAC		= 1 << 22,
++	_IBV_QP_VID    			= 1 << 23,
++	_IBV_QP_ALT_VID 		= 1 << 24,
++	*/
++	IBV_QP_RATE_LIMIT		= 1 << 25,
++};
++
++enum ibv_query_qp_data_in_order_flags {
++	IBV_QUERY_QP_DATA_IN_ORDER_RETURN_CAPS = 1 << 0,
++};
++
++enum ibv_query_qp_data_in_order_caps {
++	IBV_QUERY_QP_DATA_IN_ORDER_WHOLE_MSG = 1 << 0,
++	IBV_QUERY_QP_DATA_IN_ORDER_ALIGNED_128_BYTES = 1 << 1,
++};
++
++enum ibv_qp_state {
++	IBV_QPS_RESET,
++	IBV_QPS_INIT,
++	IBV_QPS_RTR,
++	IBV_QPS_RTS,
++	IBV_QPS_SQD,
++	IBV_QPS_SQE,
++	IBV_QPS_ERR,
++	IBV_QPS_UNKNOWN
++};
++
++enum ibv_mig_state {
++	IBV_MIG_MIGRATED,
++	IBV_MIG_REARM,
++	IBV_MIG_ARMED
++};
++
++struct ibv_qp_attr {
++	enum ibv_qp_state	qp_state;
++	enum ibv_qp_state	cur_qp_state;
++	enum ibv_mtu		path_mtu;
++	enum ibv_mig_state	path_mig_state;
++	uint32_t		qkey;
++	uint32_t		rq_psn;
++	uint32_t		sq_psn;
++	uint32_t		dest_qp_num;//
++	unsigned int		qp_access_flags;
++	struct ibv_qp_cap	cap;//
++	struct ibv_ah_attr	ah_attr;//
++	struct ibv_ah_attr	alt_ah_attr;
++	uint16_t		pkey_index;
++	uint16_t		alt_pkey_index;
++	uint8_t			en_sqd_async_notify;
++	uint8_t			sq_draining;
++	uint8_t			max_rd_atomic;//1
++	uint8_t			max_dest_rd_atomic;//1
++	uint8_t			min_rnr_timer;
++	uint8_t			port_num;
++	uint8_t			timeout;
++	uint8_t			retry_cnt;
++	uint8_t			rnr_retry;
++	uint8_t			alt_port_num;
++	uint8_t			alt_timeout;
++	uint32_t		rate_limit;
++};
++
++struct ibv_qp_rate_limit_attr {
++	uint32_t	rate_limit;  /* in kbps */
++	uint32_t	max_burst_sz; /* total burst size in bytes */
++	uint16_t	typical_pkt_sz; /* typical send packet size in bytes */
++	uint32_t	comp_mask;
++};
++
++enum ibv_wr_opcode {
++	IBV_WR_RDMA_WRITE,
++	IBV_WR_RDMA_WRITE_WITH_IMM,
++	IBV_WR_SEND,
++	IBV_WR_SEND_WITH_IMM,
++	IBV_WR_RDMA_READ,
++	IBV_WR_ATOMIC_CMP_AND_SWP,
++	IBV_WR_ATOMIC_FETCH_AND_ADD,
++	IBV_WR_LOCAL_INV,
++	IBV_WR_BIND_MW,
++	IBV_WR_SEND_WITH_INV,
++	IBV_WR_TSO,
++	IBV_WR_DRIVER1,
++	IBV_WR_FLUSH = 14,
++	IBV_WR_ATOMIC_WRITE = 15,
++};
++
++enum ibv_send_flags {
++	IBV_SEND_FENCE		= 1 << 0,
++	IBV_SEND_SIGNALED	= 1 << 1,
++	IBV_SEND_SOLICITED	= 1 << 2,
++	IBV_SEND_INLINE		= 1 << 3,
++	IBV_SEND_IP_CSUM	= 1 << 4
++};
++
++enum ibv_placement_type {
++	IBV_FLUSH_GLOBAL = 1U << 0,
++	IBV_FLUSH_PERSISTENT = 1U << 1,
++};
++
++enum ibv_selectivity_level {
++	IBV_FLUSH_RANGE = 0,
++	IBV_FLUSH_MR,
++};
++
++struct ibv_data_buf {
++	void *addr;
++	size_t length;
++};
++
++struct ibv_sge {
++	uint64_t		addr;
++	uint32_t		length;
++	uint32_t		lkey;
++};
++
++struct ibv_send_wr {
++	uint64_t		wr_id;
++	struct ibv_send_wr     *next;
++	struct ibv_sge	       *sg_list;
++	int			num_sge;
++	enum ibv_wr_opcode	opcode;
++	unsigned int		send_flags;
++	/* When opcode is *_WITH_IMM: Immediate data in network byte order.
++	 * When opcode is *_INV: Stores the rkey to invalidate
++	 */
++	union {
++		__be32			imm_data;
++		uint32_t		invalidate_rkey;
++	};
++	union {
++		struct {
++			uint64_t	remote_addr;
++			uint32_t	rkey;
++		} rdma;
++		struct {
++			uint64_t	remote_addr;
++			uint64_t	compare_add;
++			uint64_t	swap;
++			uint32_t	rkey;
++		} atomic;
++		struct {
++			struct ibv_ah  *ah;
++			uint32_t	remote_qpn;
++			uint32_t	remote_qkey;
++		} ud;
++	} wr;
++	union {
++		struct {
++			uint32_t    remote_srqn;
++		} xrc;
++	} qp_type;
++	union {
++		struct {
++			struct ibv_mw	*mw;
++			uint32_t		rkey;
++			struct ibv_mw_bind_info	bind_info;
++		} bind_mw;
++		struct {
++			void		       *hdr;
++			uint16_t		hdr_sz;
++			uint16_t		mss;
++		} tso;
++	};
++};
++
++struct ibv_send_fifo {
++  uint64_t addr;
++  int      size;
++  uint32_t rkeys[2];
++  uint32_t nreqs;
++  uint32_t tag;
++  uint64_t idx;
++  int wr_id;
++  char padding[20];
++};
++
++struct shm_ibv_send_wr {
++	uint64_t						wr_id;
++	uint32_t						imm_data;	/* in network byte order */
++	int									send_flags;
++	int									is_post_fifo;
++	enum ibv_wr_opcode	opcode;
++	uint32_t 						total_length;
++	uint64_t						remote_addr;
++	uint64_t						post_fifo_addr;
++	int									post_fifo_size;
++	uint32_t						post_fifo_rkeys[2];
++  uint32_t 						post_fifo_nreqs;
++  uint32_t 						post_fifo_tag;
++  uint64_t 						post_fifo_idx;
++	int									post_fifo_wr_id;
++};
++
++struct ibv_recv_wr {
++	uint64_t		wr_id;
++	struct ibv_recv_wr     *next;
++	struct ibv_sge	       *sg_list;
++	int			num_sge;
++};
++
++struct shm_ibv_recv_wr {
++	uint64_t		wr_id;
++	uint32_t 		total_length;
++};
++
++enum ibv_ops_wr_opcode {
++	IBV_WR_TAG_ADD,
++	IBV_WR_TAG_DEL,
++	IBV_WR_TAG_SYNC,
++};
++
++enum ibv_ops_flags {
++	IBV_OPS_SIGNALED = 1 << 0,
++	IBV_OPS_TM_SYNC  = 1 << 1,
++};
++
++struct ibv_ops_wr {
++	uint64_t				wr_id;
++	struct ibv_ops_wr		       *next;
++	enum ibv_ops_wr_opcode			opcode;
++	int					flags;
++	struct {
++		uint32_t			unexpected_cnt;
++		uint32_t			handle;
++		struct {
++			uint64_t		recv_wr_id;
++			struct ibv_sge	       *sg_list;
++			int			num_sge;
++			uint64_t		tag;
++			uint64_t		mask;
++		} add;
++	} tm;
++};
++
++struct ibv_mw_bind {
++	uint64_t		wr_id;
++	unsigned int		send_flags;
++	struct ibv_mw_bind_info bind_info;
++};
++
++struct ibv_srq {
++	struct ibv_context     *context;
++	void		       *srq_context;
++	struct ibv_pd	       *pd;
++	uint32_t		handle;
++
++	pthread_mutex_t		mutex;
++	pthread_cond_t		cond;
++	uint32_t		events_completed;
++};
++
++/*
++ * Work Queue. QP can be created without internal WQs "packaged" inside it,
++ * this QP can be configured to use "external" WQ object as its
++ * receive/send queue.
++ * WQ associated (many to one) with Completion Queue it owns WQ properties
++ * (PD, WQ size etc).
++ * WQ of type IBV_WQT_RQ:
++ * - Contains receive WQEs, in this case its PD serves as scatter as well.
++ * - Exposes post receive function to be used to post a list of work
++ *   requests (WRs) to its receive queue.
++ */
++struct ibv_wq {
++	struct ibv_context     *context;
++	void		       *wq_context;
++	struct	ibv_pd	       *pd;
++	struct	ibv_cq	       *cq;
++	uint32_t		wq_num;
++	uint32_t		handle;
++	enum ibv_wq_state       state;
++	enum ibv_wq_type	wq_type;
++	int (*post_recv)(struct ibv_wq *current,
++			 struct ibv_recv_wr *recv_wr,
++			 struct ibv_recv_wr **bad_recv_wr);
++	pthread_mutex_t		mutex;
++	pthread_cond_t		cond;
++	uint32_t		events_completed;
++	uint32_t		comp_mask;
++};
++
++struct ibv_qp {
++	struct ibv_context     *context;
++	void		       *qp_context;
++	struct ibv_pd	       *pd;
++	struct ibv_cq	       *send_cq;
++	struct ibv_cq	       *recv_cq;
++	struct ibv_srq	       *srq;
++	uint32_t		handle;
++	uint32_t		qp_num;
++	enum ibv_qp_state       state;
++	enum ibv_qp_type	qp_type;
++
++	pthread_mutex_t		mutex;
++	pthread_cond_t		cond;
++	uint32_t		events_completed;
++};
++
++struct ibv_qp_ex {
++	struct ibv_qp qp_base;
++	uint64_t comp_mask;
++
++	uint64_t wr_id;
++	/* bitmask from enum ibv_send_flags */
++	unsigned int wr_flags;
++
++	void (*wr_atomic_cmp_swp)(struct ibv_qp_ex *qp, uint32_t rkey,
++				  uint64_t remote_addr, uint64_t compare,
++				  uint64_t swap);
++	void (*wr_atomic_fetch_add)(struct ibv_qp_ex *qp, uint32_t rkey,
++				    uint64_t remote_addr, uint64_t add);
++	void (*wr_bind_mw)(struct ibv_qp_ex *qp, struct ibv_mw *mw,
++			   uint32_t rkey,
++			   const struct ibv_mw_bind_info *bind_info);
++	void (*wr_local_inv)(struct ibv_qp_ex *qp, uint32_t invalidate_rkey);
++	void (*wr_rdma_read)(struct ibv_qp_ex *qp, uint32_t rkey,
++			     uint64_t remote_addr);
++	void (*wr_rdma_write)(struct ibv_qp_ex *qp, uint32_t rkey,
++			      uint64_t remote_addr);
++	void (*wr_rdma_write_imm)(struct ibv_qp_ex *qp, uint32_t rkey,
++				  uint64_t remote_addr, __be32 imm_data);
++
++	void (*wr_send)(struct ibv_qp_ex *qp);
++	void (*wr_send_imm)(struct ibv_qp_ex *qp, __be32 imm_data);
++	void (*wr_send_inv)(struct ibv_qp_ex *qp, uint32_t invalidate_rkey);
++	void (*wr_send_tso)(struct ibv_qp_ex *qp, void *hdr, uint16_t hdr_sz,
++			    uint16_t mss);
++
++	void (*wr_set_ud_addr)(struct ibv_qp_ex *qp, struct ibv_ah *ah,
++			       uint32_t remote_qpn, uint32_t remote_qkey);
++	void (*wr_set_xrc_srqn)(struct ibv_qp_ex *qp, uint32_t remote_srqn);
++
++	void (*wr_set_inline_data)(struct ibv_qp_ex *qp, void *addr,
++				   size_t length);
++	void (*wr_set_inline_data_list)(struct ibv_qp_ex *qp, size_t num_buf,
++					const struct ibv_data_buf *buf_list);
++	void (*wr_set_sge)(struct ibv_qp_ex *qp, uint32_t lkey, uint64_t addr,
++			   uint32_t length);
++	void (*wr_set_sge_list)(struct ibv_qp_ex *qp, size_t num_sge,
++				const struct ibv_sge *sg_list);
++
++	void (*wr_start)(struct ibv_qp_ex *qp);
++	int (*wr_complete)(struct ibv_qp_ex *qp);
++	void (*wr_abort)(struct ibv_qp_ex *qp);
++
++	void (*wr_atomic_write)(struct ibv_qp_ex *qp, uint32_t rkey,
++				uint64_t remote_addr, const void *atomic_wr);
++	void (*wr_flush)(struct ibv_qp_ex *qp, uint32_t rkey,
++			 uint64_t remote_addr, size_t len, uint8_t type,
++			 uint8_t level);
++};
++
++struct ibv_qp_ex *ibv_qp_to_qp_ex(struct ibv_qp *qp);
++
++static inline void ibv_wr_atomic_cmp_swp(struct ibv_qp_ex *qp, uint32_t rkey,
++					 uint64_t remote_addr, uint64_t compare,
++					 uint64_t swap)
++{
++	qp->wr_atomic_cmp_swp(qp, rkey, remote_addr, compare, swap);
++}
++
++static inline void ibv_wr_atomic_fetch_add(struct ibv_qp_ex *qp, uint32_t rkey,
++					   uint64_t remote_addr, uint64_t add)
++{
++	qp->wr_atomic_fetch_add(qp, rkey, remote_addr, add);
++}
++
++static inline void ibv_wr_bind_mw(struct ibv_qp_ex *qp, struct ibv_mw *mw,
++				  uint32_t rkey,
++				  const struct ibv_mw_bind_info *bind_info)
++{
++	qp->wr_bind_mw(qp, mw, rkey, bind_info);
++}
++
++static inline void ibv_wr_local_inv(struct ibv_qp_ex *qp,
++				    uint32_t invalidate_rkey)
++{
++	qp->wr_local_inv(qp, invalidate_rkey);
++}
++
++static inline void ibv_wr_rdma_read(struct ibv_qp_ex *qp, uint32_t rkey,
++				    uint64_t remote_addr)
++{
++	qp->wr_rdma_read(qp, rkey, remote_addr);
++}
++
++static inline void ibv_wr_rdma_write(struct ibv_qp_ex *qp, uint32_t rkey,
++				     uint64_t remote_addr)
++{
++	qp->wr_rdma_write(qp, rkey, remote_addr);
++}
++
++static inline void ibv_wr_flush(struct ibv_qp_ex *qp, uint32_t rkey,
++				uint64_t remote_addr, size_t len, uint8_t type,
++				uint8_t level)
++{
++	qp->wr_flush(qp, rkey, remote_addr, len, type, level);
++}
++
++static inline void ibv_wr_rdma_write_imm(struct ibv_qp_ex *qp, uint32_t rkey,
++					 uint64_t remote_addr, __be32 imm_data)
++{
++	qp->wr_rdma_write_imm(qp, rkey, remote_addr, imm_data);
++}
++
++static inline void ibv_wr_send(struct ibv_qp_ex *qp)
++{
++	qp->wr_send(qp);
++}
++
++static inline void ibv_wr_send_imm(struct ibv_qp_ex *qp, __be32 imm_data)
++{
++	qp->wr_send_imm(qp, imm_data);
++}
++
++static inline void ibv_wr_send_inv(struct ibv_qp_ex *qp,
++				   uint32_t invalidate_rkey)
++{
++	qp->wr_send_inv(qp, invalidate_rkey);
++}
++
++static inline void ibv_wr_send_tso(struct ibv_qp_ex *qp, void *hdr,
++				   uint16_t hdr_sz, uint16_t mss)
++{
++	qp->wr_send_tso(qp, hdr, hdr_sz, mss);
++}
++
++static inline void ibv_wr_set_ud_addr(struct ibv_qp_ex *qp, struct ibv_ah *ah,
++				      uint32_t remote_qpn, uint32_t remote_qkey)
++{
++	qp->wr_set_ud_addr(qp, ah, remote_qpn, remote_qkey);
++}
++
++static inline void ibv_wr_set_xrc_srqn(struct ibv_qp_ex *qp,
++				       uint32_t remote_srqn)
++{
++	qp->wr_set_xrc_srqn(qp, remote_srqn);
++}
++
++static inline void ibv_wr_set_inline_data(struct ibv_qp_ex *qp, void *addr,
++					  size_t length)
++{
++	qp->wr_set_inline_data(qp, addr, length);
++}
++
++static inline void ibv_wr_set_inline_data_list(struct ibv_qp_ex *qp,
++					       size_t num_buf,
++					       const struct ibv_data_buf *buf_list)
++{
++	qp->wr_set_inline_data_list(qp, num_buf, buf_list);
++}
++
++static inline void ibv_wr_set_sge(struct ibv_qp_ex *qp, uint32_t lkey,
++				  uint64_t addr, uint32_t length)
++{
++	qp->wr_set_sge(qp, lkey, addr, length);
++}
++
++static inline void ibv_wr_set_sge_list(struct ibv_qp_ex *qp, size_t num_sge,
++				       const struct ibv_sge *sg_list)
++{
++	qp->wr_set_sge_list(qp, num_sge, sg_list);
++}
++
++static inline void ibv_wr_start(struct ibv_qp_ex *qp)
++{
++	qp->wr_start(qp);
++}
++
++static inline int ibv_wr_complete(struct ibv_qp_ex *qp)
++{
++	return qp->wr_complete(qp);
++}
++
++static inline void ibv_wr_abort(struct ibv_qp_ex *qp)
++{
++	qp->wr_abort(qp);
++}
++
++static inline void ibv_wr_atomic_write(struct ibv_qp_ex *qp, uint32_t rkey,
++				       uint64_t remote_addr, const void *atomic_wr)
++{
++	qp->wr_atomic_write(qp, rkey, remote_addr, atomic_wr);
++}
++
++struct ibv_ece {
++	/*
++	 * Unique identifier of the provider vendor on the network.
++	 * The providers will set IEEE OUI here to distinguish
++	 * itself in non-homogenius network.
++	 */
++	uint32_t vendor_id;
++	/*
++	 * Provider specific attributes which are supported or
++	 * needed to be enabled by ECE users.
++	 */
++	uint32_t options;
++	uint32_t comp_mask;
++};
++
++struct ibv_comp_channel {
++	struct ibv_context     *context;
++	int			fd;
++	int			refcnt;
++};
++
++struct ibv_cq {
++	struct ibv_context     *context;
++	struct ibv_comp_channel *channel;
++	void		       *cq_context;
++	uint32_t		handle;
++	int			cqe;
++
++	pthread_mutex_t		mutex;
++	pthread_cond_t		cond;
++	uint32_t		comp_events_completed;
++	uint32_t		async_events_completed;
++};
++
++struct ibv_poll_cq_attr {
++	uint32_t comp_mask;
++};
++
++struct ibv_wc_tm_info {
++	uint64_t		tag;	 /* tag from TMH */
++	uint32_t		priv;	 /* opaque user data from TMH */
++};
++
++struct ibv_cq_ex {
++	struct ibv_context     *context;
++	struct ibv_comp_channel *channel;
++	void		       *cq_context;
++	uint32_t		handle;
++	int			cqe;
++
++	pthread_mutex_t		mutex;
++	pthread_cond_t		cond;
++	uint32_t		comp_events_completed;
++	uint32_t		async_events_completed;
++
++	uint32_t		comp_mask;
++	enum ibv_wc_status status;
++	uint64_t wr_id;
++	int (*start_poll)(struct ibv_cq_ex *current,
++			     struct ibv_poll_cq_attr *attr);
++	int (*next_poll)(struct ibv_cq_ex *current);
++	void (*end_poll)(struct ibv_cq_ex *current);
++	enum ibv_wc_opcode (*read_opcode)(struct ibv_cq_ex *current);
++	uint32_t (*read_vendor_err)(struct ibv_cq_ex *current);
++	uint32_t (*read_byte_len)(struct ibv_cq_ex *current);
++	__be32 (*read_imm_data)(struct ibv_cq_ex *current);
++	uint32_t (*read_qp_num)(struct ibv_cq_ex *current);
++	uint32_t (*read_src_qp)(struct ibv_cq_ex *current);
++	unsigned int (*read_wc_flags)(struct ibv_cq_ex *current);
++	uint32_t (*read_slid)(struct ibv_cq_ex *current);
++	uint8_t (*read_sl)(struct ibv_cq_ex *current);
++	uint8_t (*read_dlid_path_bits)(struct ibv_cq_ex *current);
++	uint64_t (*read_completion_ts)(struct ibv_cq_ex *current);
++	uint16_t (*read_cvlan)(struct ibv_cq_ex *current);
++	uint32_t (*read_flow_tag)(struct ibv_cq_ex *current);
++	void (*read_tm_info)(struct ibv_cq_ex *current,
++			     struct ibv_wc_tm_info *tm_info);
++	uint64_t (*read_completion_wallclock_ns)(struct ibv_cq_ex *current);
++};
++
++static inline struct ibv_cq *ibv_cq_ex_to_cq(struct ibv_cq_ex *cq)
++{
++	return (struct ibv_cq *)cq;
++}
++
++enum ibv_cq_attr_mask {
++	IBV_CQ_ATTR_MODERATE = 1 << 0,
++	IBV_CQ_ATTR_RESERVED = 1 << 1,
++};
++
++struct ibv_moderate_cq {
++	uint16_t cq_count;
++	uint16_t cq_period; /* in micro seconds */
++};
++
++struct ibv_modify_cq_attr {
++	uint32_t attr_mask;
++	struct ibv_moderate_cq moderate;
++};
++
++static inline int ibv_start_poll(struct ibv_cq_ex *cq,
++				    struct ibv_poll_cq_attr *attr)
++{
++	return cq->start_poll(cq, attr);
++}
++
++static inline int ibv_next_poll(struct ibv_cq_ex *cq)
++{
++	return cq->next_poll(cq);
++}
++
++static inline void ibv_end_poll(struct ibv_cq_ex *cq)
++{
++	cq->end_poll(cq);
++}
++
++static inline enum ibv_wc_opcode ibv_wc_read_opcode(struct ibv_cq_ex *cq)
++{
++	return cq->read_opcode(cq);
++}
++
++static inline uint32_t ibv_wc_read_vendor_err(struct ibv_cq_ex *cq)
++{
++	return cq->read_vendor_err(cq);
++}
++
++static inline uint32_t ibv_wc_read_byte_len(struct ibv_cq_ex *cq)
++{
++	return cq->read_byte_len(cq);
++}
++
++static inline __be32 ibv_wc_read_imm_data(struct ibv_cq_ex *cq)
++{
++	return cq->read_imm_data(cq);
++}
++
++static inline uint32_t ibv_wc_read_invalidated_rkey(struct ibv_cq_ex *cq)
++{
++#ifdef __CHECKER__
++	return (__attribute__((force)) uint32_t)cq->read_imm_data(cq);
++#else
++	return cq->read_imm_data(cq);
++#endif
++}
++
++static inline uint32_t ibv_wc_read_qp_num(struct ibv_cq_ex *cq)
++{
++	return cq->read_qp_num(cq);
++}
++
++static inline uint32_t ibv_wc_read_src_qp(struct ibv_cq_ex *cq)
++{
++	return cq->read_src_qp(cq);
++}
++
++static inline unsigned int ibv_wc_read_wc_flags(struct ibv_cq_ex *cq)
++{
++	return cq->read_wc_flags(cq);
++}
++
++static inline uint32_t ibv_wc_read_slid(struct ibv_cq_ex *cq)
++{
++	return cq->read_slid(cq);
++}
++
++static inline uint8_t ibv_wc_read_sl(struct ibv_cq_ex *cq)
++{
++	return cq->read_sl(cq);
++}
++
++static inline uint8_t ibv_wc_read_dlid_path_bits(struct ibv_cq_ex *cq)
++{
++	return cq->read_dlid_path_bits(cq);
++}
++
++static inline uint64_t ibv_wc_read_completion_ts(struct ibv_cq_ex *cq)
++{
++	return cq->read_completion_ts(cq);
++}
++
++static inline uint64_t ibv_wc_read_completion_wallclock_ns(struct ibv_cq_ex *cq)
++{
++	return cq->read_completion_wallclock_ns(cq);
++}
++
++static inline uint16_t ibv_wc_read_cvlan(struct ibv_cq_ex *cq)
++{
++	return cq->read_cvlan(cq);
++}
++
++static inline uint32_t ibv_wc_read_flow_tag(struct ibv_cq_ex *cq)
++{
++	return cq->read_flow_tag(cq);
++}
++
++static inline void ibv_wc_read_tm_info(struct ibv_cq_ex *cq,
++				       struct ibv_wc_tm_info *tm_info)
++{
++	cq->read_tm_info(cq, tm_info);
++}
++
++static inline int ibv_post_wq_recv(struct ibv_wq *wq,
++				   struct ibv_recv_wr *recv_wr,
++				   struct ibv_recv_wr **bad_recv_wr)
++{
++	return wq->post_recv(wq, recv_wr, bad_recv_wr);
++}
++
++struct ibv_ah {
++	struct ibv_context     *context;
++	struct ibv_pd	       *pd;
++	uint32_t		handle;
++};
++
++enum ibv_flow_flags {
++	/* First bit is deprecated and can't be used */
++	IBV_FLOW_ATTR_FLAGS_DONT_TRAP = 1 << 1,
++	IBV_FLOW_ATTR_FLAGS_EGRESS = 1 << 2,
++};
++
++enum ibv_flow_attr_type {
++	/* steering according to rule specifications */
++	IBV_FLOW_ATTR_NORMAL		= 0x0,
++	/* default unicast and multicast rule -
++	 * receive all Eth traffic which isn't steered to any QP
++	 */
++	IBV_FLOW_ATTR_ALL_DEFAULT	= 0x1,
++	/* default multicast rule -
++	 * receive all Eth multicast traffic which isn't steered to any QP
++	 */
++	IBV_FLOW_ATTR_MC_DEFAULT	= 0x2,
++	/* sniffer rule - receive all port traffic */
++	IBV_FLOW_ATTR_SNIFFER		= 0x3,
++};
++
++enum ibv_flow_spec_type {
++	IBV_FLOW_SPEC_ETH		= 0x20,
++	IBV_FLOW_SPEC_IPV4		= 0x30,
++	IBV_FLOW_SPEC_IPV6		= 0x31,
++	IBV_FLOW_SPEC_IPV4_EXT		= 0x32,
++	IBV_FLOW_SPEC_ESP		= 0x34,
++	IBV_FLOW_SPEC_TCP		= 0x40,
++	IBV_FLOW_SPEC_UDP		= 0x41,
++	IBV_FLOW_SPEC_VXLAN_TUNNEL	= 0x50,
++	IBV_FLOW_SPEC_GRE		= 0x51,
++	IBV_FLOW_SPEC_MPLS		= 0x60,
++	IBV_FLOW_SPEC_INNER		= 0x100,
++	IBV_FLOW_SPEC_ACTION_TAG	= 0x1000,
++	IBV_FLOW_SPEC_ACTION_DROP	= 0x1001,
++	IBV_FLOW_SPEC_ACTION_HANDLE	= 0x1002,
++	IBV_FLOW_SPEC_ACTION_COUNT	= 0x1003,
++};
++
++struct ibv_flow_eth_filter {
++	uint8_t		dst_mac[6];
++	uint8_t		src_mac[6];
++	uint16_t	ether_type;
++	/*
++	 * same layout as 802.1q: prio 3, cfi 1, vlan id 12
++	 */
++	uint16_t	vlan_tag;
++};
++
++struct ibv_flow_spec_eth {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_eth_filter val;
++	struct ibv_flow_eth_filter mask;
++};
++
++struct ibv_flow_ipv4_filter {
++	uint32_t src_ip;
++	uint32_t dst_ip;
++};
++
++struct ibv_flow_spec_ipv4 {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_ipv4_filter val;
++	struct ibv_flow_ipv4_filter mask;
++};
++
++struct ibv_flow_ipv4_ext_filter {
++	uint32_t src_ip;
++	uint32_t dst_ip;
++	uint8_t  proto;
++	uint8_t  tos;
++	uint8_t  ttl;
++	uint8_t  flags;
++};
++
++struct ibv_flow_spec_ipv4_ext {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_ipv4_ext_filter val;
++	struct ibv_flow_ipv4_ext_filter mask;
++};
++
++struct ibv_flow_ipv6_filter {
++	uint8_t  src_ip[16];
++	uint8_t  dst_ip[16];
++	uint32_t flow_label;
++	uint8_t  next_hdr;
++	uint8_t  traffic_class;
++	uint8_t  hop_limit;
++};
++
++struct ibv_flow_spec_ipv6 {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_ipv6_filter val;
++	struct ibv_flow_ipv6_filter mask;
++};
++
++struct ibv_flow_esp_filter {
++	uint32_t spi;
++	uint32_t seq;
++};
++
++struct ibv_flow_spec_esp {
++	enum ibv_flow_spec_type type;
++	uint16_t size;
++	struct ibv_flow_esp_filter val;
++	struct ibv_flow_esp_filter mask;
++};
++
++struct ibv_flow_tcp_udp_filter {
++	uint16_t dst_port;
++	uint16_t src_port;
++};
++
++struct ibv_flow_spec_tcp_udp {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_tcp_udp_filter val;
++	struct ibv_flow_tcp_udp_filter mask;
++};
++
++struct ibv_flow_gre_filter {
++	/* c_ks_res0_ver field is bits 0-15 in offset 0 of a standard GRE header:
++	 * bit 0 - checksum present bit.
++	 * bit 1 - reserved. set to 0.
++	 * bit 2 - key present bit.
++	 * bit 3 - sequence number present bit.
++	 * bits 4:12 - reserved. set to 0.
++	 * bits 13:15 - GRE version.
++	 */
++	uint16_t c_ks_res0_ver;
++	uint16_t protocol;
++	uint32_t key;
++};
++
++struct ibv_flow_spec_gre {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_gre_filter val;
++	struct ibv_flow_gre_filter mask;
++};
++
++struct ibv_flow_mpls_filter {
++	/* The field includes the entire MPLS label:
++	 * bits 0:19 - label value field.
++	 * bits 20:22 - traffic class field.
++	 * bits 23 - bottom of stack bit.
++	 * bits 24:31 - ttl field.
++	 */
++	uint32_t label;
++};
++
++struct ibv_flow_spec_mpls {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_mpls_filter val;
++	struct ibv_flow_mpls_filter mask;
++};
++
++struct ibv_flow_tunnel_filter {
++	uint32_t tunnel_id;
++};
++
++struct ibv_flow_spec_tunnel {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_flow_tunnel_filter val;
++	struct ibv_flow_tunnel_filter mask;
++};
++
++struct ibv_flow_spec_action_tag {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	uint32_t  tag_id;
++};
++
++struct ibv_flow_spec_action_drop {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++};
++
++struct ibv_flow_spec_action_handle {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	const struct ibv_flow_action *action;
++};
++
++struct ibv_flow_spec_counter_action {
++	enum ibv_flow_spec_type  type;
++	uint16_t  size;
++	struct ibv_counters *counters;
++};
++
++struct ibv_flow_spec {
++	union {
++		struct {
++			enum ibv_flow_spec_type	type;
++			uint16_t		size;
++		} hdr;
++		struct ibv_flow_spec_eth eth;
++		struct ibv_flow_spec_ipv4 ipv4;
++		struct ibv_flow_spec_tcp_udp tcp_udp;
++		struct ibv_flow_spec_ipv4_ext ipv4_ext;
++		struct ibv_flow_spec_ipv6 ipv6;
++		struct ibv_flow_spec_esp esp;
++		struct ibv_flow_spec_tunnel tunnel;
++		struct ibv_flow_spec_gre gre;
++		struct ibv_flow_spec_mpls mpls;
++		struct ibv_flow_spec_action_tag flow_tag;
++		struct ibv_flow_spec_action_drop drop;
++		struct ibv_flow_spec_action_handle handle;
++		struct ibv_flow_spec_counter_action flow_count;
++	};
++};
++
++struct ibv_flow_attr {
++	uint32_t comp_mask;
++	enum ibv_flow_attr_type type;
++	uint16_t size;
++	uint16_t priority;
++	uint8_t num_of_specs;
++	uint8_t port;
++	uint32_t flags;
++	/* Following are the optional layers according to user request
++	 * struct ibv_flow_spec_xxx [L2]
++	 * struct ibv_flow_spec_yyy [L3/L4]
++	 */
++};
++
++struct ibv_flow {
++	uint32_t	   comp_mask;
++	struct ibv_context *context;
++	uint32_t	   handle;
++};
++
++struct ibv_flow_action {
++	struct ibv_context *context;
++};
++
++enum ibv_flow_action_esp_mask {
++	IBV_FLOW_ACTION_ESP_MASK_ESN    = 1UL << 0,
++};
++
++struct ibv_flow_action_esp_attr {
++	struct ibv_flow_action_esp *esp_attr;
++
++	enum ibv_flow_action_esp_keymat	keymat_proto;
++	uint16_t		keymat_len;
++	void			*keymat_ptr;
++
++	enum ibv_flow_action_esp_replay replay_proto;
++	uint16_t                replay_len;
++	void                    *replay_ptr;
++
++	struct ibv_flow_action_esp_encap *esp_encap;
++
++	uint32_t		comp_mask; /* Use enum ibv_flow_action_esp_mask */
++	uint32_t		esn;
++};
++
++struct ibv_device;
++struct ibv_context;
++
++/* Obsolete, never used, do not touch */
++struct _ibv_device_ops {
++	struct ibv_context *	(*_dummy1)(struct ibv_device *device, int cmd_fd);
++	void			(*_dummy2)(struct ibv_context *context);
++};
++
++enum {
++	IBV_SYSFS_NAME_MAX	= 64,
++	IBV_SYSFS_PATH_MAX	= 256
++};
++
++struct ibv_device {
++	struct _ibv_device_ops	_ops;
++	enum ibv_node_type	node_type;
++	enum ibv_transport_type	transport_type;
++	/* Name of underlying kernel IB device, eg "mthca0" */
++	char			name[IBV_SYSFS_NAME_MAX];
++	/* Name of uverbs device, eg "uverbs0" */
++	char			dev_name[IBV_SYSFS_NAME_MAX];
++	/* Path to infiniband_verbs class device in sysfs */
++  /* 我直接在这里保存其对应的segment的name */
++	char			dev_path[IBV_SYSFS_PATH_MAX];
++	/* Path to infiniband class device in sysfs */
++	char			ibdev_path[IBV_SYSFS_PATH_MAX];
++};
++
++struct _compat_ibv_port_attr;
++struct ibv_context_ops {
++	int (*_compat_query_device)(struct ibv_context *context,
++				    struct ibv_device_attr *device_attr);
++	int (*_compat_query_port)(struct ibv_context *context,
++				  uint8_t port_num,
++				  struct _compat_ibv_port_attr *port_attr);
++	void *(*_compat_alloc_pd)(void);
++	void *(*_compat_dealloc_pd)(void);
++	void *(*_compat_reg_mr)(void);
++	void *(*_compat_rereg_mr)(void);
++	void *(*_compat_dereg_mr)(void);
++	struct ibv_mw *		(*alloc_mw)(struct ibv_pd *pd, enum ibv_mw_type type);
++	int			(*bind_mw)(struct ibv_qp *qp, struct ibv_mw *mw,
++					   struct ibv_mw_bind *mw_bind);
++	int			(*dealloc_mw)(struct ibv_mw *mw);
++	void *(*_compat_create_cq)(void);
++	int			(*poll_cq)(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc);
++	int			(*req_notify_cq)(struct ibv_cq *cq, int solicited_only);
++	void *(*_compat_cq_event)(void);
++	void *(*_compat_resize_cq)(void);
++	void *(*_compat_destroy_cq)(void);
++	void *(*_compat_create_srq)(void);
++	void *(*_compat_modify_srq)(void);
++	void *(*_compat_query_srq)(void);
++	void *(*_compat_destroy_srq)(void);
++	int			(*post_srq_recv)(struct ibv_srq *srq,
++						 struct ibv_recv_wr *recv_wr,
++						 struct ibv_recv_wr **bad_recv_wr);
++	void *(*_compat_create_qp)(void);
++	void *(*_compat_query_qp)(void);
++	void *(*_compat_modify_qp)(void);
++	void *(*_compat_destroy_qp)(void);
++	int			(*post_send)(struct ibv_qp *qp, struct ibv_send_wr *wr,
++					     struct ibv_send_wr **bad_wr);
++	int			(*post_recv)(struct ibv_qp *qp, struct ibv_recv_wr *wr,
++					     struct ibv_recv_wr **bad_wr);
++	void *(*_compat_create_ah)(void);
++	void *(*_compat_destroy_ah)(void);
++	void *(*_compat_attach_mcast)(void);
++	void *(*_compat_detach_mcast)(void);
++	void *(*_compat_async_event)(void);
++};
++
++struct ibv_context {
++	struct ibv_device      *device;
++	struct ibv_context_ops	ops;
++	int			cmd_fd;									// 维护device_id
++	int			async_fd;
++	int			num_comp_vectors;
++	pthread_mutex_t		mutex;
++	void		       *abi_compat;
++};
++
++enum ibv_cq_init_attr_mask {
++	IBV_CQ_INIT_ATTR_MASK_FLAGS	= 1 << 0,
++	IBV_CQ_INIT_ATTR_MASK_PD	= 1 << 1,
++};
++
++enum ibv_create_cq_attr_flags {
++	IBV_CREATE_CQ_ATTR_SINGLE_THREADED = 1 << 0,
++	IBV_CREATE_CQ_ATTR_IGNORE_OVERRUN  = 1 << 1,
++};
++
++struct ibv_cq_init_attr_ex {
++	/* Minimum number of entries required for CQ */
++	uint32_t			cqe;
++	/* Consumer-supplied context returned for completion events */
++	void			*cq_context;
++	/* Completion channel where completion events will be queued.
++	 * May be NULL if completion events will not be used.
++	 */
++	struct ibv_comp_channel *channel;
++	/* Completion vector used to signal completion events.
++	 *  Must be < context->num_comp_vectors.
++	 */
++	uint32_t			comp_vector;
++	 /* Or'ed bit of enum ibv_create_cq_wc_flags. */
++	uint64_t		wc_flags;
++	/* compatibility mask (extended verb). Or'd flags of
++	 * enum ibv_cq_init_attr_mask
++	 */
++	uint32_t		comp_mask;
++	/* create cq attr flags - one or more flags from
++	 * enum ibv_create_cq_attr_flags
++	 */
++	uint32_t		flags;
++	struct ibv_pd		*parent_domain;
++};
++
++enum ibv_parent_domain_init_attr_mask {
++	IBV_PARENT_DOMAIN_INIT_ATTR_ALLOCATORS = 1 << 0,
++	IBV_PARENT_DOMAIN_INIT_ATTR_PD_CONTEXT = 1 << 1,
++};
++
++#define IBV_ALLOCATOR_USE_DEFAULT ((void *)-1)
++
++struct ibv_parent_domain_init_attr {
++	struct ibv_pd *pd; /* reference to a protection domain object, can't be NULL */
++	struct ibv_td *td; /* reference to a thread domain object, or NULL */
++	uint32_t comp_mask;
++	void *(*alloc)(struct ibv_pd *pd, void *pd_context, size_t size,
++		       size_t alignment, uint64_t resource_type);
++	void (*free)(struct ibv_pd *pd, void *pd_context, void *ptr,
++		     uint64_t resource_type);
++	void *pd_context;
++};
++
++struct ibv_counters_init_attr {
++	uint32_t	comp_mask;
++};
++
++struct ibv_counters {
++	struct ibv_context	*context;
++};
++
++enum ibv_counter_description {
++	IBV_COUNTER_PACKETS,
++	IBV_COUNTER_BYTES,
++};
++
++struct ibv_counter_attach_attr {
++	enum ibv_counter_description counter_desc;
++	uint32_t index; /* Desired location index of the counter at the counters object */
++	uint32_t comp_mask;
++};
++
++enum ibv_read_counters_flags {
++	IBV_READ_COUNTERS_ATTR_PREFER_CACHED = 1 << 0,
++};
++
++enum ibv_values_mask {
++	IBV_VALUES_MASK_RAW_CLOCK	= 1 << 0,
++	IBV_VALUES_MASK_RESERVED	= 1 << 1
++};
++
++struct ibv_values_ex {
++	uint32_t	comp_mask;
++	struct timespec raw_clock;
++};
++
++struct verbs_context {
++	/*  "grows up" - new fields go here */
++	int (*query_port)(struct ibv_context *context, uint8_t port_num,
++			  struct ibv_port_attr *port_attr,
++			  size_t port_attr_len);
++	int (*advise_mr)(struct ibv_pd *pd,
++			 enum ibv_advise_mr_advice advice,
++			 uint32_t flags,
++			 struct ibv_sge *sg_list,
++			 uint32_t num_sges);
++	struct ibv_mr *(*alloc_null_mr)(struct ibv_pd *pd);
++	int (*read_counters)(struct ibv_counters *counters,
++			     uint64_t *counters_value,
++			     uint32_t ncounters,
++			     uint32_t flags);
++	int (*attach_counters_point_flow)(struct ibv_counters *counters,
++					  struct ibv_counter_attach_attr *attr,
++					  struct ibv_flow *flow);
++	struct ibv_counters *(*create_counters)(struct ibv_context *context,
++						struct ibv_counters_init_attr *init_attr);
++	int (*destroy_counters)(struct ibv_counters *counters);
++	struct ibv_mr *(*reg_dm_mr)(struct ibv_pd *pd, struct ibv_dm *dm,
++				    uint64_t dm_offset, size_t length,
++				    unsigned int access);
++	struct ibv_dm *(*alloc_dm)(struct ibv_context *context,
++				   struct ibv_alloc_dm_attr *attr);
++	int (*free_dm)(struct ibv_dm *dm);
++	int (*modify_flow_action_esp)(struct ibv_flow_action *action,
++				      struct ibv_flow_action_esp_attr *attr);
++	int (*destroy_flow_action)(struct ibv_flow_action *action);
++	struct ibv_flow_action *(*create_flow_action_esp)(struct ibv_context *context,
++							  struct ibv_flow_action_esp_attr *attr);
++	int (*modify_qp_rate_limit)(struct ibv_qp *qp,
++				    struct ibv_qp_rate_limit_attr *attr);
++	struct ibv_pd *(*alloc_parent_domain)(struct ibv_context *context,
++					      struct ibv_parent_domain_init_attr *attr);
++	int (*dealloc_td)(struct ibv_td *td);
++	struct ibv_td *(*alloc_td)(struct ibv_context *context, struct ibv_td_init_attr *init_attr);
++	int (*modify_cq)(struct ibv_cq *cq, struct ibv_modify_cq_attr *attr);
++	int (*post_srq_ops)(struct ibv_srq *srq,
++			    struct ibv_ops_wr *op,
++			    struct ibv_ops_wr **bad_op);
++	int (*destroy_rwq_ind_table)(struct ibv_rwq_ind_table *rwq_ind_table);
++	struct ibv_rwq_ind_table *(*create_rwq_ind_table)(struct ibv_context *context,
++							  struct ibv_rwq_ind_table_init_attr *init_attr);
++	int (*destroy_wq)(struct ibv_wq *wq);
++	int (*modify_wq)(struct ibv_wq *wq, struct ibv_wq_attr *wq_attr);
++	struct ibv_wq * (*create_wq)(struct ibv_context *context,
++				     struct ibv_wq_init_attr *wq_init_attr);
++	int (*query_rt_values)(struct ibv_context *context,
++			       struct ibv_values_ex *values);
++	struct ibv_cq_ex *(*create_cq_ex)(struct ibv_context *context,
++					  struct ibv_cq_init_attr_ex *init_attr);
++	struct verbs_ex_private *priv;
++	int (*query_device_ex)(struct ibv_context *context,
++			       const struct ibv_query_device_ex_input *input,
++			       struct ibv_device_attr_ex *attr,
++			       size_t attr_size);
++	int (*ibv_destroy_flow) (struct ibv_flow *flow);
++	void (*ABI_placeholder2) (void); /* DO NOT COPY THIS GARBAGE */
++	struct ibv_flow * (*ibv_create_flow) (struct ibv_qp *qp,
++					      struct ibv_flow_attr *flow_attr);
++	void (*ABI_placeholder1) (void); /* DO NOT COPY THIS GARBAGE */
++	struct ibv_qp *(*open_qp)(struct ibv_context *context,
++			struct ibv_qp_open_attr *attr);
++	struct ibv_qp *(*create_qp_ex)(struct ibv_context *context,
++			struct ibv_qp_init_attr_ex *qp_init_attr_ex);
++	int (*get_srq_num)(struct ibv_srq *srq, uint32_t *srq_num);
++	struct ibv_srq *	(*create_srq_ex)(struct ibv_context *context,
++						 struct ibv_srq_init_attr_ex *srq_init_attr_ex);
++	struct ibv_xrcd *	(*open_xrcd)(struct ibv_context *context,
++					     struct ibv_xrcd_init_attr *xrcd_init_attr);
++	int			(*close_xrcd)(struct ibv_xrcd *xrcd);
++	uint64_t _ABI_placeholder3;
++	size_t   sz;			/* Must be immediately before struct ibv_context */
++	struct ibv_context context;	/* Must be last field in the struct */
++};
++
++static inline struct verbs_context *verbs_get_ctx(struct ibv_context *ctx)
++{
++	if (ctx->abi_compat != __VERBS_ABI_IS_EXTENDED)
++		return NULL;
++
++	/* open code container_of to not pollute the global namespace */
++	return (struct verbs_context *)(((uint8_t *)ctx) -
++					offsetof(struct verbs_context,
++						 context));
++}
++
++#define verbs_get_ctx_op(ctx, op) ({ \
++	struct verbs_context *__vctx = verbs_get_ctx(ctx); \
++	(!__vctx || (__vctx->sz < sizeof(*__vctx) - offsetof(struct verbs_context, op)) || \
++	 !__vctx->op) ? NULL : __vctx; })
++
++/**
++ * ibv_get_device_list - Get list of IB devices currently available
++ * @num_devices: optional.  if non-NULL, set to the number of devices
++ * returned in the array.
++ *
++ * Return a NULL-terminated array of IB devices.  The array can be
++ * released with ibv_free_device_list().
++ */
++struct ibv_device **ibv_get_device_list(int *num_devices);
++
++/*
++ * When statically linking the user can set RDMA_STATIC_PROVIDERS to a comma
++ * separated list of provider names to include in the static link, and this
++ * machinery will cause those providers to be included statically.
++ *
++ * Linking will fail if this is set for dynamic linking.
++ */
++#ifdef RDMA_STATIC_PROVIDERS
++#define _RDMA_STATIC_PREFIX_(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11,     \
++			     _12, _13, _14, _15, _16, _17, _18, _19, ...)      \
++	&verbs_provider_##_1, &verbs_provider_##_2, &verbs_provider_##_3,      \
++		&verbs_provider_##_4, &verbs_provider_##_5,                    \
++		&verbs_provider_##_6, &verbs_provider_##_7,                    \
++		&verbs_provider_##_8, &verbs_provider_##_9,                    \
++		&verbs_provider_##_10, &verbs_provider_##_11,                  \
++		&verbs_provider_##_12, &verbs_provider_##_13,                  \
++		&verbs_provider_##_14, &verbs_provider_##_15,                  \
++		&verbs_provider_##_16, &verbs_provider_##_17,                  \
++		&verbs_provider_##_18, &verbs_provider_##_19
++#define _RDMA_STATIC_PREFIX(arg)                                               \
++	_RDMA_STATIC_PREFIX_(arg, none, none, none, none, none, none, none,    \
++			     none, none, none, none, none, none, none, none,   \
++			     none, none, none)
++
++struct verbs_devices_ops;
++extern const struct verbs_device_ops verbs_provider_bnxt_re;
++extern const struct verbs_device_ops verbs_provider_cxgb4;
++extern const struct verbs_device_ops verbs_provider_efa;
++extern const struct verbs_device_ops verbs_provider_erdma;
++extern const struct verbs_device_ops verbs_provider_hfi1verbs;
++extern const struct verbs_device_ops verbs_provider_hns;
++extern const struct verbs_device_ops verbs_provider_ipathverbs;
++extern const struct verbs_device_ops verbs_provider_irdma;
++extern const struct verbs_device_ops verbs_provider_mana;
++extern const struct verbs_device_ops verbs_provider_mlx4;
++extern const struct verbs_device_ops verbs_provider_mlx5;
++extern const struct verbs_device_ops verbs_provider_mthca;
++extern const struct verbs_device_ops verbs_provider_ocrdma;
++extern const struct verbs_device_ops verbs_provider_qedr;
++extern const struct verbs_device_ops verbs_provider_rxe;
++extern const struct verbs_device_ops verbs_provider_siw;
++extern const struct verbs_device_ops verbs_provider_vmw_pvrdma;
++extern const struct verbs_device_ops verbs_provider_all;
++extern const struct verbs_device_ops verbs_provider_none;
++void ibv_static_providers(void *unused, ...);
++
++static inline struct ibv_device **__ibv_get_device_list(int *num_devices)
++{
++	ibv_static_providers(NULL, _RDMA_STATIC_PREFIX(RDMA_STATIC_PROVIDERS),
++			     NULL);
++	return ibv_get_device_list(num_devices);
++}
++#define ibv_get_device_list(num_devices) __ibv_get_device_list(num_devices)
++#endif
++
++/**
++ * ibv_free_device_list - Free list from ibv_get_device_list()
++ *
++ * Free an array of devices returned from ibv_get_device_list().  Once
++ * the array is freed, pointers to devices that were not opened with
++ * ibv_open_device() are no longer valid.  Client code must open all
++ * devices it intends to use before calling ibv_free_device_list().
++ */
++void ibv_free_device_list(struct ibv_device **list);
++
++/**
++ * ibv_get_device_name - Return kernel device name
++ */
++const char *ibv_get_device_name(struct ibv_device *device);
++
++/**
++ * ibv_get_device_index - Return kernel device index
++ *
++ * Available for the kernel with support of IB device query
++ * over netlink interface. For the unsupported kernels, the
++ * relevant -1 will be returned.
++ */
++int ibv_get_device_index(struct ibv_device *device);
++
++/**
++ * ibv_get_device_guid - Return device's node GUID
++ */
++__be64 ibv_get_device_guid(struct ibv_device *device);
++
++/**
++ * ibv_open_device - Initialize device for use
++ */
++struct ibv_context *ibv_open_device(struct ibv_device *device);
++
++/**
++ * ibv_close_device - Release device
++ */
++int ibv_close_device(struct ibv_context *context);
++
++/**
++ * ibv_import_device - Import device
++ */
++struct ibv_context *ibv_import_device(int cmd_fd);
++
++/**
++ * ibv_import_pd - Import a protetion domain
++ */
++struct ibv_pd *ibv_import_pd(struct ibv_context *context,
++			     uint32_t pd_handle);
++
++/**
++ * ibv_unimport_pd - Unimport a protetion domain
++ */
++void ibv_unimport_pd(struct ibv_pd *pd);
++
++/**
++ * ibv_import_mr - Import a memory region
++ */
++struct ibv_mr *ibv_import_mr(struct ibv_pd *pd, uint32_t mr_handle);
++
++/**
++ * ibv_unimport_mr - Unimport a memory region
++ */
++void ibv_unimport_mr(struct ibv_mr *mr);
++
++/**
++ * ibv_import_dm - Import a device memory
++ */
++struct ibv_dm *ibv_import_dm(struct ibv_context *context, uint32_t dm_handle);
++
++/**
++ * ibv_unimport_dm - Unimport a device memory
++ */
++void ibv_unimport_dm(struct ibv_dm *dm);
++
++/**
++ * ibv_get_async_event - Get next async event
++ * @event: Pointer to use to return async event
++ *
++ * All async events returned by ibv_get_async_event() must eventually
++ * be acknowledged with ibv_ack_async_event().
++ */
++int ibv_get_async_event(struct ibv_context *context,
++			struct ibv_async_event *event);
++
++/**
++ * ibv_ack_async_event - Acknowledge an async event
++ * @event: Event to be acknowledged.
++ *
++ * All async events which are returned by ibv_get_async_event() must
++ * be acknowledged.  To avoid races, destroying an object (CQ, SRQ or
++ * QP) will wait for all affiliated events to be acknowledged, so
++ * there should be a one-to-one correspondence between acks and
++ * successful gets.
++ */
++void ibv_ack_async_event(struct ibv_async_event *event);
++
++/**
++ * ibv_query_device - Get device properties
++ */
++int ibv_query_device(struct ibv_context *context,
++		     struct ibv_device_attr *device_attr);
++
++/**
++ * ibv_query_port - Get port properties
++ */
++int ibv_query_port(struct ibv_context *context, uint8_t port_num,
++		   struct ibv_port_attr *port_attr);
++
++/**
++ * ibv_query_gid - Get a GID table entry
++ */
++int ibv_query_gid(struct ibv_context *context, uint8_t port_num,
++		  int index, union ibv_gid *gid);
++
++int _ibv_query_gid_ex(struct ibv_context *context, uint32_t port_num,
++		     uint32_t gid_index, struct ibv_gid_entry *entry,
++		     uint32_t flags, size_t entry_size);
++
++/**
++ * ibv_query_gid_ex - Read a GID table entry
++ */
++static inline int ibv_query_gid_ex(struct ibv_context *context,
++				   uint32_t port_num, uint32_t gid_index,
++				   struct ibv_gid_entry *entry, uint32_t flags)
++{
++	return _ibv_query_gid_ex(context, port_num, gid_index, entry, flags,
++				 sizeof(*entry));
++}
++
++ssize_t _ibv_query_gid_table(struct ibv_context *context,
++			     struct ibv_gid_entry *entries, size_t max_entries,
++			     uint32_t flags, size_t entry_size);
++
++/*
++ * ibv_query_gid_table - Get all valid GID table entries
++ */
++static inline ssize_t ibv_query_gid_table(struct ibv_context *context,
++					  struct ibv_gid_entry *entries,
++					  size_t max_entries, uint32_t flags)
++{
++	return _ibv_query_gid_table(context, entries, max_entries, flags,
++				    sizeof(*entries));
++}
++
++/**
++ * ibv_query_pkey - Get a P_Key table entry
++ */
++int ibv_query_pkey(struct ibv_context *context, uint8_t port_num,
++		   int index, __be16 *pkey);
++
++/**
++ * ibv_get_pkey_index - Translate a P_Key into a P_Key index
++ */
++int ibv_get_pkey_index(struct ibv_context *context, uint8_t port_num,
++		       __be16 pkey);
++
++/**
++ * ibv_alloc_pd - Allocate a protection domain
++ */
++struct ibv_pd *ibv_alloc_pd(struct ibv_context *context);
++
++/**
++ * ibv_dealloc_pd - Free a protection domain
++ */
++int ibv_dealloc_pd(struct ibv_pd *pd);
++
++static inline struct ibv_flow *ibv_create_flow(struct ibv_qp *qp,
++					       struct ibv_flow_attr *flow)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(qp->context,
++						      ibv_create_flow);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->ibv_create_flow(qp, flow);
++}
++
++static inline int ibv_destroy_flow(struct ibv_flow *flow_id)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(flow_id->context,
++						      ibv_destroy_flow);
++	if (!vctx)
++		return EOPNOTSUPP;
++	return vctx->ibv_destroy_flow(flow_id);
++}
++
++static inline struct ibv_flow_action *
++ibv_create_flow_action_esp(struct ibv_context *ctx,
++			   struct ibv_flow_action_esp_attr *esp)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(ctx,
++						      create_flow_action_esp);
++
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->create_flow_action_esp(ctx, esp);
++}
++
++static inline int
++ibv_modify_flow_action_esp(struct ibv_flow_action *action,
++			   struct ibv_flow_action_esp_attr *esp)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(action->context,
++						      modify_flow_action_esp);
++
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->modify_flow_action_esp(action, esp);
++}
++
++static inline int ibv_destroy_flow_action(struct ibv_flow_action *action)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(action->context,
++						      destroy_flow_action);
++
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->destroy_flow_action(action);
++}
++
++/**
++ * ibv_open_xrcd - Open an extended connection domain
++ */
++static inline struct ibv_xrcd *
++ibv_open_xrcd(struct ibv_context *context, struct ibv_xrcd_init_attr *xrcd_init_attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(context, open_xrcd);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++	return vctx->open_xrcd(context, xrcd_init_attr);
++}
++
++/**
++ * ibv_close_xrcd - Close an extended connection domain
++ */
++static inline int ibv_close_xrcd(struct ibv_xrcd *xrcd)
++{
++	struct verbs_context *vctx = verbs_get_ctx(xrcd->context);
++	return vctx->close_xrcd(xrcd);
++}
++
++/**
++ * ibv_reg_mr - Register a memory region
++ */
++struct ibv_mr *ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length,
++			  int access);
++
++enum ibv_rereg_mr_err_code {
++	/* Old MR is valid, invalid input */
++	IBV_REREG_MR_ERR_INPUT = -1,
++	/* Old MR is valid, failed via don't fork on new address range */
++	IBV_REREG_MR_ERR_DONT_FORK_NEW = -2,
++	/* New MR is valid, failed via do fork on old address range */
++	IBV_REREG_MR_ERR_DO_FORK_OLD = -3,
++	/* MR shouldn't be used, command error */
++	IBV_REREG_MR_ERR_CMD = -4,
++	/* MR shouldn't be used, command error, invalid fork state on new address range */
++	IBV_REREG_MR_ERR_CMD_AND_DO_FORK_NEW = -5,
++};
++
++/**
++ * ibv_rereg_mr - Re-Register a memory region
++ */
++int ibv_rereg_mr(struct ibv_mr *mr, int flags,
++		 struct ibv_pd *pd, void *addr,
++		 size_t length, int access);
++/**
++ * ibv_dereg_mr - Deregister a memory region
++ */
++int ibv_dereg_mr(struct ibv_mr *mr);
++
++/**
++ * ibv_alloc_mw - Allocate a memory window
++ */
++static inline struct ibv_mw *ibv_alloc_mw(struct ibv_pd *pd,
++					  enum ibv_mw_type type)
++{
++	struct ibv_mw *mw;
++
++	if (!pd->context->ops.alloc_mw) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	mw = pd->context->ops.alloc_mw(pd, type);
++	return mw;
++}
++
++/**
++ * ibv_dealloc_mw - Free a memory window
++ */
++static inline int ibv_dealloc_mw(struct ibv_mw *mw)
++{
++	return mw->context->ops.dealloc_mw(mw);
++}
++
++/**
++ * ibv_inc_rkey - Increase the 8 lsb in the given rkey
++ */
++static inline uint32_t ibv_inc_rkey(uint32_t rkey)
++{
++	const uint32_t mask = 0x000000ff;
++	uint8_t newtag = (uint8_t)((rkey + 1) & mask);
++
++	return (rkey & ~mask) | newtag;
++}
++
++/**
++ * ibv_bind_mw - Bind a memory window to a region
++ */
++static inline int ibv_bind_mw(struct ibv_qp *qp, struct ibv_mw *mw,
++			      struct ibv_mw_bind *mw_bind)
++{
++	struct ibv_mw_bind_info *bind_info = &mw_bind->bind_info;
++
++	if (mw->type != IBV_MW_TYPE_1)
++		return EINVAL;
++
++	if (!bind_info->mr && (bind_info->addr || bind_info->length))
++		return EINVAL;
++
++	if (bind_info->mr && (mw->pd != bind_info->mr->pd))
++		return EPERM;
++
++	return mw->context->ops.bind_mw(qp, mw, mw_bind);
++}
++
++/**
++ * ibv_create_comp_channel - Create a completion event channel
++ */
++struct ibv_comp_channel *ibv_create_comp_channel(struct ibv_context *context);
++
++/**
++ * ibv_destroy_comp_channel - Destroy a completion event channel
++ */
++int ibv_destroy_comp_channel(struct ibv_comp_channel *channel);
++
++/**
++ * ibv_advise_mr - Gives advice about an address range in MRs
++ * @pd - protection domain of all MRs for which the advice is for
++ * @advice - type of advice
++ * @flags - advice modifiers
++ * @sg_list - an array of memory ranges
++ * @num_sge - number of elements in the array
++ */
++static inline int ibv_advise_mr(struct ibv_pd *pd,
++				enum ibv_advise_mr_advice advice,
++				uint32_t flags,
++				struct ibv_sge *sg_list,
++				uint32_t num_sge)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(pd->context, advise_mr);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->advise_mr(pd, advice, flags, sg_list, num_sge);
++}
++
++/**
++ * ibv_alloc_dm - Allocate device memory
++ * @context - Context DM will be attached to
++ * @attr - Attributes to allocate the DM with
++ */
++static inline
++struct ibv_dm *ibv_alloc_dm(struct ibv_context *context,
++			    struct ibv_alloc_dm_attr *attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(context, alloc_dm);
++
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->alloc_dm(context, attr);
++}
++
++/**
++ * ibv_free_dm - Free device allocated memory
++ * @dm - The DM to free
++ */
++static inline
++int ibv_free_dm(struct ibv_dm *dm)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(dm->context, free_dm);
++
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->free_dm(dm);
++}
++
++/**
++ * ibv_memcpy_to/from_dm - copy to/from device allocated memory
++ * @dm - The DM to copy to/from
++ * @dm_offset - Offset in bytes from beginning of DM to start copy to/form
++ * @host_addr - Host memory address to copy to/from
++ * @length - Number of bytes to copy
++ */
++static inline
++int ibv_memcpy_to_dm(struct ibv_dm *dm, uint64_t dm_offset,
++		     const void *host_addr, size_t length)
++{
++	return dm->memcpy_to_dm(dm, dm_offset, host_addr, length);
++}
++
++static inline
++int ibv_memcpy_from_dm(void *host_addr, struct ibv_dm *dm,
++		       uint64_t dm_offset, size_t length)
++{
++	return dm->memcpy_from_dm(host_addr, dm, dm_offset, length);
++}
++
++/*
++ * ibv_alloc_null_mr - Allocate a null memory region.
++ * @pd - The protection domain associated with the MR.
++ */
++static inline
++struct ibv_mr *ibv_alloc_null_mr(struct ibv_pd *pd)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(pd->context, alloc_null_mr);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->alloc_null_mr(pd);
++}
++
++/**
++ * ibv_reg_dm_mr - Register device memory as a memory region
++ * @pd - The PD to associated this MR with
++ * @dm - The DM to register
++ * @dm_offset - Offset in bytes from beginning of DM to start registration from
++ * @length - Number of bytes to register
++ * @access - memory region access flags
++ */
++static inline
++struct ibv_mr *ibv_reg_dm_mr(struct ibv_pd *pd, struct ibv_dm *dm,
++			     uint64_t dm_offset,
++			     size_t length, unsigned int access)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(pd->context, reg_dm_mr);
++
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->reg_dm_mr(pd, dm, dm_offset, length, access);
++}
++
++/**
++ * ibv_create_cq - Create a completion queue
++ * @context - Context CQ will be attached to
++ * @cqe - Minimum number of entries required for CQ
++ * @cq_context - Consumer-supplied context returned for completion events
++ * @channel - Completion channel where completion events will be queued.
++ *     May be NULL if completion events will not be used.
++ * @comp_vector - Completion vector used to signal completion events.
++ *     Must be >= 0 and < context->num_comp_vectors.
++ */
++struct ibv_cq *ibv_create_cq(struct ibv_context *context, int cqe,
++			     void *cq_context,
++			     struct ibv_comp_channel *channel,
++			     int comp_vector);
++
++/**
++ * ibv_create_cq_ex - Create a completion queue
++ * @context - Context CQ will be attached to
++ * @cq_attr - Attributes to create the CQ with
++ */
++static inline
++struct ibv_cq_ex *ibv_create_cq_ex(struct ibv_context *context,
++				   struct ibv_cq_init_attr_ex *cq_attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(context, create_cq_ex);
++
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->create_cq_ex(context, cq_attr);
++}
++
++/**
++ * ibv_resize_cq - Modifies the capacity of the CQ.
++ * @cq: The CQ to resize.
++ * @cqe: The minimum size of the CQ.
++ *
++ * Users can examine the cq structure to determine the actual CQ size.
++ */
++int ibv_resize_cq(struct ibv_cq *cq, int cqe);
++
++/**
++ * ibv_destroy_cq - Destroy a completion queue
++ */
++int ibv_destroy_cq(struct ibv_cq *cq);
++
++/**
++ * ibv_get_cq_event - Read next CQ event
++ * @channel: Channel to get next event from.
++ * @cq: Used to return pointer to CQ.
++ * @cq_context: Used to return consumer-supplied CQ context.
++ *
++ * All completion events returned by ibv_get_cq_event() must
++ * eventually be acknowledged with ibv_ack_cq_events().
++ */
++int ibv_get_cq_event(struct ibv_comp_channel *channel,
++		     struct ibv_cq **cq, void **cq_context);
++
++/**
++ * ibv_ack_cq_events - Acknowledge CQ completion events
++ * @cq: CQ to acknowledge events for
++ * @nevents: Number of events to acknowledge.
++ *
++ * All completion events which are returned by ibv_get_cq_event() must
++ * be acknowledged.  To avoid races, ibv_destroy_cq() will wait for
++ * all completion events to be acknowledged, so there should be a
++ * one-to-one correspondence between acks and successful gets.  An
++ * application may accumulate multiple completion events and
++ * acknowledge them in a single call to ibv_ack_cq_events() by passing
++ * the number of events to ack in @nevents.
++ */
++void ibv_ack_cq_events(struct ibv_cq *cq, unsigned int nevents);
++
++/**
++ * ibv_poll_cq - Poll a CQ for work completions
++ * @cq:the CQ being polled
++ * @num_entries:maximum number of completions to return
++ * @wc:array of at least @num_entries of &struct ibv_wc where completions
++ *   will be returned
++ *
++ * Poll a CQ for (possibly multiple) completions.  If the return value
++ * is < 0, an error occurred.  If the return value is >= 0, it is the
++ * number of completions returned.  If the return value is
++ * non-negative and strictly less than num_entries, then the CQ was
++ * emptied.
++ */
++static inline int ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc)
++{
++	return cq->context->ops.poll_cq(cq, num_entries, wc);
++}
++
++/**
++ * ibv_req_notify_cq - Request completion notification on a CQ.  An
++ *   event will be added to the completion channel associated with the
++ *   CQ when an entry is added to the CQ.
++ * @cq: The completion queue to request notification for.
++ * @solicited_only: If non-zero, an event will be generated only for
++ *   the next solicited CQ entry.  If zero, any CQ entry, solicited or
++ *   not, will generate an event.
++ */
++static inline int ibv_req_notify_cq(struct ibv_cq *cq, int solicited_only)
++{
++	return cq->context->ops.req_notify_cq(cq, solicited_only);
++}
++
++static inline int ibv_modify_cq(struct ibv_cq *cq, struct ibv_modify_cq_attr *attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(cq->context, modify_cq);
++
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->modify_cq(cq, attr);
++}
++/**
++ * ibv_create_srq - Creates a SRQ associated with the specified protection
++ *   domain.
++ * @pd: The protection domain associated with the SRQ.
++ * @srq_init_attr: A list of initial attributes required to create the SRQ.
++ *
++ * srq_attr->max_wr and srq_attr->max_sge are read the determine the
++ * requested size of the SRQ, and set to the actual values allocated
++ * on return.  If ibv_create_srq() succeeds, then max_wr and max_sge
++ * will always be at least as large as the requested values.
++ */
++struct ibv_srq *ibv_create_srq(struct ibv_pd *pd,
++			       struct ibv_srq_init_attr *srq_init_attr);
++
++static inline struct ibv_srq *
++ibv_create_srq_ex(struct ibv_context *context,
++		  struct ibv_srq_init_attr_ex *srq_init_attr_ex)
++{
++	struct verbs_context *vctx;
++	uint32_t mask = srq_init_attr_ex->comp_mask;
++
++	if (!(mask & ~(uint32_t)(IBV_SRQ_INIT_ATTR_PD | IBV_SRQ_INIT_ATTR_TYPE)) &&
++	    (mask & IBV_SRQ_INIT_ATTR_PD) &&
++	    (!(mask & IBV_SRQ_INIT_ATTR_TYPE) ||
++	     (srq_init_attr_ex->srq_type == IBV_SRQT_BASIC)))
++		return ibv_create_srq(srq_init_attr_ex->pd,
++				      (struct ibv_srq_init_attr *)srq_init_attr_ex);
++
++	vctx = verbs_get_ctx_op(context, create_srq_ex);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++	return vctx->create_srq_ex(context, srq_init_attr_ex);
++}
++
++/**
++ * ibv_modify_srq - Modifies the attributes for the specified SRQ.
++ * @srq: The SRQ to modify.
++ * @srq_attr: On input, specifies the SRQ attributes to modify.  On output,
++ *   the current values of selected SRQ attributes are returned.
++ * @srq_attr_mask: A bit-mask used to specify which attributes of the SRQ
++ *   are being modified.
++ *
++ * The mask may contain IBV_SRQ_MAX_WR to resize the SRQ and/or
++ * IBV_SRQ_LIMIT to set the SRQ's limit and request notification when
++ * the number of receives queued drops below the limit.
++ */
++int ibv_modify_srq(struct ibv_srq *srq,
++		   struct ibv_srq_attr *srq_attr,
++		   int srq_attr_mask);
++
++/**
++ * ibv_query_srq - Returns the attribute list and current values for the
++ *   specified SRQ.
++ * @srq: The SRQ to query.
++ * @srq_attr: The attributes of the specified SRQ.
++ */
++int ibv_query_srq(struct ibv_srq *srq, struct ibv_srq_attr *srq_attr);
++
++static inline int ibv_get_srq_num(struct ibv_srq *srq, uint32_t *srq_num)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(srq->context, get_srq_num);
++
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->get_srq_num(srq, srq_num);
++}
++
++/**
++ * ibv_destroy_srq - Destroys the specified SRQ.
++ * @srq: The SRQ to destroy.
++ */
++int ibv_destroy_srq(struct ibv_srq *srq);
++
++/**
++ * ibv_post_srq_recv - Posts a list of work requests to the specified SRQ.
++ * @srq: The SRQ to post the work request on.
++ * @recv_wr: A list of work requests to post on the receive queue.
++ * @bad_recv_wr: On an immediate failure, this parameter will reference
++ *   the work request that failed to be posted on the QP.
++ */
++static inline int ibv_post_srq_recv(struct ibv_srq *srq,
++				    struct ibv_recv_wr *recv_wr,
++				    struct ibv_recv_wr **bad_recv_wr)
++{
++	return srq->context->ops.post_srq_recv(srq, recv_wr, bad_recv_wr);
++}
++
++static inline int ibv_post_srq_ops(struct ibv_srq *srq,
++				   struct ibv_ops_wr *op,
++				   struct ibv_ops_wr **bad_op)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(srq->context, post_srq_ops);
++	if (!vctx) {
++		*bad_op = op;
++		return EOPNOTSUPP;
++	}
++	return vctx->post_srq_ops(srq, op, bad_op);
++}
++
++/**
++ * ibv_create_qp - Create a queue pair.
++ */
++struct ibv_qp *ibv_create_qp(struct ibv_pd *pd,
++			     struct ibv_qp_init_attr *qp_init_attr);
++
++uint32_t cal_sge_total_len(struct ibv_sge *sg_list, 
++											int num_sge);
++int shm_ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr,
++				struct ibv_send_wr **bad_wr);
++int shm_ibv_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *wr,
++				struct ibv_recv_wr **bad_wr);
++int shm_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc);
++int shm_generate_cqe(struct ibv_cq *cq, shm_ibv_send_wr wr, uint32_t local_qpn);
++static inline struct ibv_qp *
++ibv_create_qp_ex(struct ibv_context *context, struct ibv_qp_init_attr_ex *qp_init_attr_ex)
++{
++	struct verbs_context *vctx;
++	uint32_t mask = qp_init_attr_ex->comp_mask;
++
++	if (mask == IBV_QP_INIT_ATTR_PD)
++		return ibv_create_qp(qp_init_attr_ex->pd,
++				     (struct ibv_qp_init_attr *)qp_init_attr_ex);
++
++	vctx = verbs_get_ctx_op(context, create_qp_ex);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++	return vctx->create_qp_ex(context, qp_init_attr_ex);
++}
++
++/**
++ * ibv_alloc_td - Allocate a thread domain
++ */
++static inline struct ibv_td *ibv_alloc_td(struct ibv_context *context,
++					  struct ibv_td_init_attr *init_attr)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(context, alloc_td);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->alloc_td(context, init_attr);
++}
++
++/**
++ * ibv_dealloc_td - Free a thread domain
++ */
++static inline int ibv_dealloc_td(struct ibv_td *td)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(td->context, dealloc_td);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->dealloc_td(td);
++}
++
++/**
++ * ibv_alloc_parent_domain - Allocate a parent domain
++ */
++static inline struct ibv_pd *
++ibv_alloc_parent_domain(struct ibv_context *context,
++			struct ibv_parent_domain_init_attr *attr)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(context, alloc_parent_domain);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->alloc_parent_domain(context, attr);
++}
++
++/**
++ * ibv_query_rt_values_ex - Get current real time @values of a device.
++ * @values - in/out - defines the attributes we need to query/queried.
++ * (Or's bits of enum ibv_values_mask on values->comp_mask field)
++ */
++static inline int
++ibv_query_rt_values_ex(struct ibv_context *context,
++		       struct ibv_values_ex *values)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(context, query_rt_values);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->query_rt_values(context, values);
++}
++
++/**
++ * ibv_query_device_ex - Get extended device properties
++ */
++static inline int
++ibv_query_device_ex(struct ibv_context *context,
++		    const struct ibv_query_device_ex_input *input,
++		    struct ibv_device_attr_ex *attr)
++{
++	struct verbs_context *vctx;
++	int ret;
++
++	if (input && input->comp_mask)
++		return EINVAL;
++
++	vctx = verbs_get_ctx_op(context, query_device_ex);
++	if (!vctx)
++		goto legacy;
++
++	ret = vctx->query_device_ex(context, input, attr, sizeof(*attr));
++	if (ret == EOPNOTSUPP || ret == ENOSYS)
++		goto legacy;
++
++	return ret;
++
++legacy:
++	memset(attr, 0, sizeof(*attr));
++	ret = ibv_query_device(context, &attr->orig_attr);
++
++	return ret;
++}
++
++/**
++ * ibv_open_qp - Open a shareable queue pair.
++ */
++static inline struct ibv_qp *
++ibv_open_qp(struct ibv_context *context, struct ibv_qp_open_attr *qp_open_attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(context, open_qp);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++	return vctx->open_qp(context, qp_open_attr);
++}
++
++/**
++ * ibv_modify_qp - Modify a queue pair.
++ */
++int ibv_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
++		  int attr_mask);
++
++/**
++ * ibv_modify_qp_rate_limit - Modify a queue pair rate limit values
++ * @qp - QP object to modify
++ * @attr - Attributes to configure the rate limiting values of the QP
++ */
++static inline int
++ibv_modify_qp_rate_limit(struct ibv_qp *qp,
++			 struct ibv_qp_rate_limit_attr *attr)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(qp->context, modify_qp_rate_limit);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->modify_qp_rate_limit(qp, attr);
++}
++
++/**
++ * ibv_query_qp_data_in_order - Checks whether the data is guaranteed to be
++ *   written in-order.
++ * @qp: The QP to query.
++ * @op: Operation type.
++ * @flags: Flags are used to select a query type.
++ * For IBV_QUERY_QP_DATA_IN_ORDER_RETURN_CAPS, the function will return a
++ * capabilities vector. If 0, will query for IBV_QUERY_QP_DATA_IN_ORDER_WHOLE_MSG
++ * support and return 0/1 result.
++ *
++ * Return Value
++ * ibv_query_qp_data_in_order() return value is determined by flags.
++ * For each capability bit, 1 is returned if the data is guaranteed to be
++ * written in-order for selected operation and type, 0 otherwise.
++ */
++int ibv_query_qp_data_in_order(struct ibv_qp *qp, enum ibv_wr_opcode op,
++			       uint32_t flags);
++
++/**
++ * ibv_query_qp - Returns the attribute list and current values for the
++ *   specified QP.
++ * @qp: The QP to query.
++ * @attr: The attributes of the specified QP.
++ * @attr_mask: A bit-mask used to select specific attributes to query.
++ * @init_attr: Additional attributes of the selected QP.
++ *
++ * The qp_attr_mask may be used to limit the query to gathering only the
++ * selected attributes.
++ */
++int ibv_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
++		 int attr_mask,
++		 struct ibv_qp_init_attr *init_attr);
++
++/**
++ * ibv_destroy_qp - Destroy a queue pair.
++ */
++int ibv_destroy_qp(struct ibv_qp *qp);
++
++/*
++ * ibv_create_wq - Creates a WQ associated with the specified protection
++ * domain.
++ * @context: ibv_context.
++ * @wq_init_attr: A list of initial attributes required to create the
++ * WQ. If WQ creation succeeds, then the attributes are updated to
++ * the actual capabilities of the created WQ.
++ *
++ * wq_init_attr->max_wr and wq_init_attr->max_sge determine
++ * the requested size of the WQ, and set to the actual values allocated
++ * on return.
++ * If ibv_create_wq() succeeds, then max_wr and max_sge will always be
++ * at least as large as the requested values.
++ *
++ * Return Value
++ * ibv_create_wq() returns a pointer to the created WQ, or NULL if the request
++ * fails.
++ */
++static inline struct ibv_wq *ibv_create_wq(struct ibv_context *context,
++					   struct ibv_wq_init_attr *wq_init_attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(context, create_wq);
++	struct ibv_wq *wq;
++
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	wq = vctx->create_wq(context, wq_init_attr);
++	if (wq) {
++		wq->wq_context = wq_init_attr->wq_context;
++		wq->events_completed = 0;
++		pthread_mutex_init(&wq->mutex, NULL);
++		pthread_cond_init(&wq->cond, NULL);
++	}
++
++	return wq;
++}
++
++/*
++ * ibv_modify_wq - Modifies the attributes for the specified WQ.
++ * @wq: The WQ to modify.
++ * @wq_attr: On input, specifies the WQ attributes to modify.
++ *    wq_attr->attr_mask: A bit-mask used to specify which attributes of the WQ
++ *    are being modified.
++ * On output, the current values of selected WQ attributes are returned.
++ *
++ * Return Value
++ * ibv_modify_wq() returns 0 on success, or the value of errno
++ * on failure (which indicates the failure reason).
++ *
++*/
++static inline int ibv_modify_wq(struct ibv_wq *wq, struct ibv_wq_attr *wq_attr)
++{
++	struct verbs_context *vctx = verbs_get_ctx_op(wq->context, modify_wq);
++
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->modify_wq(wq, wq_attr);
++}
++
++/*
++ * ibv_destroy_wq - Destroys the specified WQ.
++ * @ibv_wq: The WQ to destroy.
++ * Return Value
++ * ibv_destroy_wq() returns 0 on success, or the value of errno
++ * on failure (which indicates the failure reason).
++*/
++static inline int ibv_destroy_wq(struct ibv_wq *wq)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(wq->context, destroy_wq);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->destroy_wq(wq);
++}
++
++/*
++ * ibv_create_rwq_ind_table - Creates a receive work queue Indirection Table
++ * @context: ibv_context.
++ * @init_attr: A list of initial attributes required to create the Indirection Table.
++ * Return Value
++ * ibv_create_rwq_ind_table returns a pointer to the created
++ * Indirection Table, or NULL if the request fails.
++ */
++static inline struct ibv_rwq_ind_table *ibv_create_rwq_ind_table(struct ibv_context *context,
++								 struct ibv_rwq_ind_table_init_attr *init_attr)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(context, create_rwq_ind_table);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->create_rwq_ind_table(context, init_attr);
++}
++
++/*
++ * ibv_destroy_rwq_ind_table - Destroys the specified Indirection Table.
++ * @rwq_ind_table: The Indirection Table to destroy.
++ * Return Value
++ * ibv_destroy_rwq_ind_table() returns 0 on success, or the value of errno
++ * on failure (which indicates the failure reason).
++*/
++static inline int ibv_destroy_rwq_ind_table(struct ibv_rwq_ind_table *rwq_ind_table)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(rwq_ind_table->context, destroy_rwq_ind_table);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->destroy_rwq_ind_table(rwq_ind_table);
++}
++
++/**
++ * ibv_post_send - Post a list of work requests to a send queue.
++ *
++ * If IBV_SEND_INLINE flag is set, the data buffers can be reused
++ * immediately after the call returns.
++ */
++static inline int ibv_post_send(struct ibv_qp *qp, struct ibv_send_wr *wr,
++				struct ibv_send_wr **bad_wr)
++{
++	return qp->context->ops.post_send(qp, wr, bad_wr);
++}
++
++/**
++ * ibv_post_recv - Post a list of work requests to a receive queue.
++ */
++static inline int ibv_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *wr,
++				struct ibv_recv_wr **bad_wr)
++{
++	return qp->context->ops.post_recv(qp, wr, bad_wr);
++}
++
++/**
++ * ibv_create_ah - Create an address handle.
++ */
++struct ibv_ah *ibv_create_ah(struct ibv_pd *pd, struct ibv_ah_attr *attr);
++
++/**
++ * ibv_init_ah_from_wc - Initializes address handle attributes from a
++ *   work completion.
++ * @context: Device context on which the received message arrived.
++ * @port_num: Port on which the received message arrived.
++ * @wc: Work completion associated with the received message.
++ * @grh: References the received global route header.  This parameter is
++ *   ignored unless the work completion indicates that the GRH is valid.
++ * @ah_attr: Returned attributes that can be used when creating an address
++ *   handle for replying to the message.
++ */
++int ibv_init_ah_from_wc(struct ibv_context *context, uint8_t port_num,
++			struct ibv_wc *wc, struct ibv_grh *grh,
++			struct ibv_ah_attr *ah_attr);
++
++/**
++ * ibv_create_ah_from_wc - Creates an address handle associated with the
++ *   sender of the specified work completion.
++ * @pd: The protection domain associated with the address handle.
++ * @wc: Work completion information associated with a received message.
++ * @grh: References the received global route header.  This parameter is
++ *   ignored unless the work completion indicates that the GRH is valid.
++ * @port_num: The outbound port number to associate with the address.
++ *
++ * The address handle is used to reference a local or global destination
++ * in all UD QP post sends.
++ */
++struct ibv_ah *ibv_create_ah_from_wc(struct ibv_pd *pd, struct ibv_wc *wc,
++				     struct ibv_grh *grh, uint8_t port_num);
++
++/**
++ * ibv_destroy_ah - Destroy an address handle.
++ */
++int ibv_destroy_ah(struct ibv_ah *ah);
++
++/**
++ * ibv_attach_mcast - Attaches the specified QP to a multicast group.
++ * @qp: QP to attach to the multicast group.  The QP must be a UD QP.
++ * @gid: Multicast group GID.
++ * @lid: Multicast group LID in host byte order.
++ *
++ * In order to route multicast packets correctly, subnet
++ * administration must have created the multicast group and configured
++ * the fabric appropriately.  The port associated with the specified
++ * QP must also be a member of the multicast group.
++ */
++int ibv_attach_mcast(struct ibv_qp *qp, const union ibv_gid *gid, uint16_t lid);
++
++/**
++ * ibv_detach_mcast - Detaches the specified QP from a multicast group.
++ * @qp: QP to detach from the multicast group.
++ * @gid: Multicast group GID.
++ * @lid: Multicast group LID in host byte order.
++ */
++int ibv_detach_mcast(struct ibv_qp *qp, const union ibv_gid *gid, uint16_t lid);
++
++/**
++ * ibv_fork_init - Prepare data structures so that fork() may be used
++ * safely.  If this function is not called or returns a non-zero
++ * status, then libibverbs data structures are not fork()-safe and the
++ * effect of an application calling fork() is undefined.
++ */
++int ibv_fork_init(void);
++
++/**
++ * ibv_is_fork_initialized - Check if fork support
++ * (ibv_fork_init) was enabled.
++ */
++enum ibv_fork_status ibv_is_fork_initialized(void);
++
++/**
++ * ibv_node_type_str - Return string describing node_type enum value
++ */
++const char *ibv_node_type_str(enum ibv_node_type node_type);
++
++/**
++ * ibv_port_state_str - Return string describing port_state enum value
++ */
++const char *ibv_port_state_str(enum ibv_port_state port_state);
++
++/**
++ * ibv_event_type_str - Return string describing event_type enum value
++ */
++const char *ibv_event_type_str(enum ibv_event_type event);
++
++#define ETHERNET_LL_SIZE 6
++int ibv_resolve_eth_l2_from_gid(struct ibv_context *context,
++				struct ibv_ah_attr *attr,
++				uint8_t eth_mac[ETHERNET_LL_SIZE],
++				uint16_t *vid);
++
++static inline int ibv_is_qpt_supported(uint32_t caps, enum ibv_qp_type qpt)
++{
++	return !!(caps & (1 << qpt));
++}
++
++static inline struct ibv_counters *ibv_create_counters(struct ibv_context *context,
++						       struct ibv_counters_init_attr *init_attr)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(context, create_counters);
++	if (!vctx) {
++		errno = EOPNOTSUPP;
++		return NULL;
++	}
++
++	return vctx->create_counters(context, init_attr);
++}
++
++static inline int ibv_destroy_counters(struct ibv_counters *counters)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(counters->context, destroy_counters);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->destroy_counters(counters);
++}
++
++static inline int ibv_attach_counters_point_flow(struct ibv_counters *counters,
++						 struct ibv_counter_attach_attr *attr,
++						 struct ibv_flow *flow)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(counters->context, attach_counters_point_flow);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->attach_counters_point_flow(counters, attr, flow);
++}
++
++static inline int ibv_read_counters(struct ibv_counters *counters,
++				    uint64_t *counters_value,
++				    uint32_t ncounters,
++				    uint32_t flags)
++{
++	struct verbs_context *vctx;
++
++	vctx = verbs_get_ctx_op(counters->context, read_counters);
++	if (!vctx)
++		return EOPNOTSUPP;
++
++	return vctx->read_counters(counters, counters_value, ncounters, flags);
++}
++
++#define IB_ROCE_UDP_ENCAP_VALID_PORT_MIN (0xC000)
++#define IB_ROCE_UDP_ENCAP_VALID_PORT_MAX (0xFFFF)
++#define IB_GRH_FLOWLABEL_MASK (0x000FFFFF)
++
++static inline uint16_t ibv_flow_label_to_udp_sport(uint32_t fl)
++{
++	uint32_t fl_low = fl & 0x03FFF, fl_high = fl & 0xFC000;
++
++	fl_low ^= fl_high >> 14;
++	return (uint16_t)(fl_low | IB_ROCE_UDP_ENCAP_VALID_PORT_MIN);
++}
++
++/**
++ * ibv_set_ece - Set ECE options
++ */
++int ibv_set_ece(struct ibv_qp *qp, struct ibv_ece *ece);
++
++/**
++ * ibv_query_ece - Get accepted ECE options
++ */
++int ibv_query_ece(struct ibv_qp *qp, struct ibv_ece *ece);
++#ifdef __cplusplus
++}
++#endif
++
++#  undef __attribute_const
++
++
++#endif /* INFINIBAND_VERBS_H */
+\ No newline at end of file
+diff --git a/src/misc/ibvsymbols.cc b/src/misc/ibvsymbols.cc
+index bd5f3339..819b5410 100644
+--- a/src/misc/ibvsymbols.cc
++++ b/src/misc/ibvsymbols.cc
+@@ -39,8 +39,10 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
+   ASSIGN_SYM(ibvSymbols, ibv_alloc_pd, ibv_internal_alloc_pd);
+   ASSIGN_SYM(ibvSymbols, ibv_dealloc_pd, ibv_internal_dealloc_pd);
+ 
+-  ASSIGN_SYM(ibvSymbols, ibv_reg_mr_iova2, ibv_internal_reg_mr_iova2);
+-  ASSIGN_SYM(ibvSymbols, ibv_reg_dmabuf_mr, ibv_internal_reg_dmabuf_mr);
++  // ASSIGN_SYM(ibvSymbols, ibv_reg_mr_iova2, ibv_internal_reg_mr_iova2);
++  // ASSIGN_SYM(ibvSymbols, ibv_reg_dmabuf_mr, ibv_internal_reg_dmabuf_mr);
++  ibvSymbols->ibv_internal_reg_mr_iova2= NULL;
++  ibvSymbols->ibv_internal_reg_dmabuf_mr= NULL;
+ 
+   ASSIGN_SYM(ibvSymbols, ibv_dereg_mr, ibv_internal_dereg_mr);
+   ASSIGN_SYM(ibvSymbols, ibv_create_cq, ibv_internal_create_cq);
+@@ -51,8 +53,10 @@ ncclResult_t buildIbvSymbols(struct ncclIbvSymbols* ibvSymbols) {
+   ASSIGN_SYM(ibvSymbols, ibv_fork_init, ibv_internal_fork_init);
+   ASSIGN_SYM(ibvSymbols, ibv_event_type_str, ibv_internal_event_type_str);
+   
+-  ASSIGN_SYM(ibvSymbols, ibv_query_ece, ibv_internal_query_ece);
+-  ASSIGN_SYM(ibvSymbols, ibv_set_ece, ibv_internal_set_ece);
++  // ASSIGN_SYM(ibvSymbols, ibv_query_ece, ibv_internal_query_ece);
++  // ASSIGN_SYM(ibvSymbols, ibv_set_ece, ibv_internal_set_ece);
++  ibvSymbols->ibv_internal_query_ece= NULL;
++  ibvSymbols->ibv_internal_set_ece= NULL;
+ 
+   ibvSymbols->ibv_internal_reg_mr = &ibv_internal_reg_mr;
+   ibvSymbols->ibv_internal_query_port = &ibv_internal_query_port;
+diff --git a/src/misc/ibvwrap.cc b/src/misc/ibvwrap.cc
+index eb4e52b6..5d99d3cf 100644
+--- a/src/misc/ibvwrap.cc
++++ b/src/misc/ibvwrap.cc
+@@ -14,6 +14,7 @@ static pthread_once_t initOnceControl = PTHREAD_ONCE_INIT;
+ static ncclResult_t initResult;
+ struct ncclIbvSymbols ibvSymbols;
+ 
++uint32_t total_cqes_polled = 0;
+ ncclResult_t wrap_ibv_symbols(void) {
+   pthread_once(&initOnceControl,
+                [](){ initResult = buildIbvSymbols(&ibvSymbols); });
+diff --git a/src/misc/utils.cc b/src/misc/utils.cc
+index bb59947e..c4dbef96 100644
+--- a/src/misc/utils.cc
++++ b/src/misc/utils.cc
+@@ -8,8 +8,9 @@
+ #include "core.h"
+ 
+ #include "nvmlwrap.h"
+-
++#include <stdio.h>
+ #include <stdlib.h>
++#include <iostream>
+ 
+ // Get current Compute Capability
+ int ncclCudaCompCap() {
+@@ -76,35 +77,48 @@ static uint64_t hostHashValue = 0;
+  */
+ #define HOSTID_FILE "/proc/sys/kernel/random/boot_id"
+ static void getHostHashOnce() {
+-  char hostHash[1024];
+-  const char *hostId;
+-
+-  // Fall back is the full hostname if something fails
+-  (void) getHostName(hostHash, sizeof(hostHash), '\0');
+-  int offset = strlen(hostHash);
+-
+-  if ((hostId = ncclGetEnv("NCCL_HOSTID")) != NULL) {
+-    INFO(NCCL_ENV, "NCCL_HOSTID set by environment to %s", hostId);
+-    strncpy(hostHash, hostId, sizeof(hostHash)-1);
+-    hostHash[sizeof(hostHash)-1] = '\0';
+-  } else {
+-    FILE *file = fopen(HOSTID_FILE, "r");
+-    if (file != NULL) {
+-      char *p;
+-      if (fscanf(file, "%ms", &p) == 1) {
+-        strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
+-        free(p);
+-      }
+-      fclose(file);
+-    }
++  // char hostHash[1024];
++  // const char *hostId;
++
++  // // Fall back is the full hostname if something fails
++  // (void) getHostName(hostHash, sizeof(hostHash), '\0');
++  // int offset = strlen(hostHash);
++
++  // if ((hostId = ncclGetEnv("NCCL_HOSTID")) != NULL) {
++  //   INFO(NCCL_ENV, "NCCL_HOSTID set by environment to %s", hostId);
++  //   strncpy(hostHash, hostId, sizeof(hostHash)-1);
++  //   hostHash[sizeof(hostHash)-1] = '\0';
++  // } else {
++  //   FILE *file = fopen(HOSTID_FILE, "r");
++  //   if (file != NULL) {
++  //     char *p;
++  //     if (fscanf(file, "%ms", &p) == 1) {
++  //       strncpy(hostHash+offset, p, sizeof(hostHash)-offset-1);
++  //       free(p);
++  //     }
++  //     fclose(file);
++  //   }
++  // }
++
++  // // Make sure the string is terminated
++  // hostHash[sizeof(hostHash)-1]='\0';
++
++  char *env_value = getenv("NODE_ID");
++  if (env_value == NULL) {
++    fprintf(stderr, "Environment variable NODE_ID is not set.\n");
++    return;
+   }
+-
+-  // Make sure the string is terminated
+-  hostHash[sizeof(hostHash)-1]='\0';
+-
+-  TRACE(NCCL_INIT,"unique hostname '%s'", hostHash);
+-
+-  hostHashValue = getHash(hostHash, strlen(hostHash));
++  int node_id = std::stoi(env_value);
++  // 目前是默认 一台机器上有几个GPU 就在这个机器上开启几个进程 
++  // 一般情况下 就是默认的num_gpus_per_server = std::stoi(env_value) = 8
++  char *env_value1 = getenv("NUM_GPUS_PER_SERVER");
++  if (env_value1 == NULL) {
++    fprintf(stderr, "Environment variable NUM_GPUS_PER_SERVER is not set.\n");
++    return;
++  }
++  int num_gpus_per_server = std::stoi(env_value1);
++  // hostHashValue = node_id / num_gpus_per_server;
++  hostHashValue = node_id / 1;
+ }
+ uint64_t getHostHash(void) {
+   static pthread_once_t once = PTHREAD_ONCE_INIT;
+diff --git a/src/nccl.h.in b/src/nccl.h.in
+index 431ecb55..135f03d1 100644
+--- a/src/nccl.h.in
++++ b/src/nccl.h.in
+@@ -9,6 +9,7 @@
+ 
+ #include <cuda_runtime.h>
+ #include <cuda_fp16.h>
++#include <stdint.h>
+ #if CUDART_VERSION >= 11000
+ #include <cuda_bf16.h>
+ #endif
+diff --git a/src/nsibverbs/command.cc b/src/nsibverbs/command.cc
+new file mode 100644
+index 00000000..3a9793ce
+--- /dev/null
++++ b/src/nsibverbs/command.cc
+@@ -0,0 +1,131 @@
++#include "command.h"
++#include "debug.h"
++#include <sys/time.h>
++#include <fstream>
++uint32_t ascending_cmd_id = 0;
++std::vector<int64_t> pollTimeVector;
++std::ofstream outFile("pollTimeVector.txt");
++CommandQueue *cmd_queue = NULL;
++CommandResponseQueue *cmd_resp_queue = NULL;
++boost::interprocess::interprocess_mutex * cmd_queue_mutex = NULL;
++boost::interprocess::interprocess_mutex * cmd_resp_queue_mutex = NULL;
++#define USLEEP_TIME 0
++
++extern "C" {
++char *GetCurrentTime() {
++	struct timeval tv;
++	struct tm *tm_info;
++	char time_str[200];
++	char total_time_str[240];
++
++	// 获取当前时间
++	if (gettimeofday(&tv, NULL) != 0) {
++		printf("Error in gettimeofday");
++		return NULL;
++	}
++	tm_info = localtime(&tv.tv_sec);
++	strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
++	// 打印时间，包括微秒
++	sprintf(total_time_str, "[%s.%06ld]", time_str, tv.tv_usec);
++	return total_time_str;
++}
++
++int64_t GetSimTime(int flag) {
++  char *env_value = getenv("SOCKET_FD");
++  if (env_value == NULL) {
++    fprintf(stderr, "Environment variable SOCKET_FD is not set.\n");
++    return -1;
++  }
++  int sock = std::stoi(env_value);
++  // 发送数据到服务器
++  int message = flag;
++  write(sock, &message, sizeof(message));
++  // 接收服务器的响应
++  int64_t time_ns = 0;
++  int valread = read(sock, &time_ns, sizeof(time_ns));
++  if (valread == sizeof(time_ns)) {
++    return time_ns;
++  } else {
++    printf("read failed");
++    return -1;
++  }
++}
++int get_usleep_time() {
++  char *env_value = getenv("USLEEP_TIME");
++  if (env_value == NULL) {
++    return 0;
++  } else {
++    int time_us = std::stoi(env_value);
++    return time_us;
++  }
++}
++bool SendIbvCommand(IbvCommand &cmd) {
++  // INFO(NCCL_NET, "Node %d,Cmd %u SendIbvCommand\n", get_node_id(), cmd.cmd_id);
++  if(cmd_queue && cmd_queue_mutex) {
++    usleep(get_usleep_time());
++    LOCK_MUTEX(cmd_queue);
++    cmd_queue->push_back(cmd);
++    return true;
++  } else {
++    printf("Error: pointer is NULL: %d %d\n",cmd_queue==NULL, cmd_queue_mutex==NULL);
++    return false;
++  }
++}
++
++bool TryPopCommandResponse(IbvCommandResponse &cmd_resp)
++{
++  if (cmd_resp_queue->empty()) {
++    return false;
++  }
++  else {
++    LOCK_MUTEX(cmd_resp_queue);
++    cmd_resp = cmd_resp_queue->front();
++    cmd_resp_queue->erase(cmd_resp_queue->begin());
++    return true;
++  }
++}
++bool RecvIbvCommandResponse(IbvCommandResponse &cmd_resp, uint32_t cmd_id) {
++  if(cmd_resp_queue && cmd_resp_queue_mutex) {
++    auto start_time = std::chrono::high_resolution_clock::now();
++    int counter = 0;
++    while (true)
++    {
++      // 超时检查
++      auto current_time = std::chrono::high_resolution_clock::now();
++      auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count();
++      if(elapsed_time >= POLL_TIMEOUT_VALUE) {
++        printf("Error: timeout\n");
++        return false;
++      }
++      bool result = TryPopCommandResponse(cmd_resp);
++      counter ++;
++      if(result) {
++        if(cmd_resp.cmd_id == cmd_id) {
++          // INFO(NCCL_NET, "Node %d,Cmd %u RecvIbvCommandResponse\n", get_node_id(), cmd_resp.cmd_id);
++          if(get_node_id() == 0){
++            pollTimeVector.push_back(counter);
++            if(pollTimeVector.size() >= 500) {
++              if (!outFile.is_open()) {
++                  std::cerr << "无法打开文件 pollTimeVector.txt" << std::endl;
++                  return 1;
++              }
++              // 将向量中的每个元素逐行写入文件
++              for (const auto& line : pollTimeVector) {
++                  outFile << line << std::endl;
++              }
++              pollTimeVector.clear();
++            }
++          }
++          return true;
++        } else {
++          printf("Error: Node %d,Cmd %u cmd_id not match: %d %d\n",get_node_id(), cmd_resp.cmd_id, cmd_resp.cmd_id, cmd_id);
++          return false;
++        }
++      }
++    }
++  } else {
++    printf("Error: pointer is NULL: %d %d\n",cmd_resp_queue==NULL, cmd_resp_queue_mutex==NULL);
++    return false;
++  }
++} 
++}
+diff --git a/src/nsibverbs/cq.cc b/src/nsibverbs/cq.cc
+new file mode 100644
+index 00000000..c49a3fe8
+--- /dev/null
++++ b/src/nsibverbs/cq.cc
+@@ -0,0 +1,140 @@
++#include "verbs.h"
++#include "debug.h"
++#include "command.h"
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++#include <iostream>
++#include <string>
++#include <thread>
++#include <cstdlib>
++#include <cstring>
++#include <stdint.h>
++using namespace std;
++using namespace boost::interprocess;
++extern "C" {
++typedef boost::interprocess::allocator<shm_ibv_wc, boost::interprocess::managed_shared_memory::segment_manager> CQEAllocator;
++typedef boost::interprocess::vector<shm_ibv_wc, CQEAllocator> CQEQueue;
++struct ibv_cq *ibv_create_cq(struct ibv_context *context, int cqe, 
++        void *cq_context, struct ibv_comp_channel *channel, int comp_vector) {
++  int device_id = context->cmd_fd;
++  IbvCommand cmd;
++  IbvCommandResponse resp;
++  cmd.cmd_id = ascending_cmd_id++;
++  cmd.cmd_type = IBV_CREATE_CQ;
++  cmd.cmd_args.create_cq_input_args.device_id = device_id;
++  cmd.cmd_args.create_cq_input_args.cqe = cqe;
++  cmd.cmd_args.create_cq_input_args.comp_vector = comp_vector;
++  bool re1 = SendIbvCommand(cmd);
++  bool re2 = RecvIbvCommandResponse(resp,cmd.cmd_id);
++  if (re1 && re2) {
++    char *cq_name = (char *)malloc(40);
++    strncpy(cq_name, resp.cmd_reponse.create_cq_output_args.cq_name,NAME_LEN);
++    ibv_cq *cq = (ibv_cq *) malloc(sizeof(ibv_cq));
++    // memcpy(cq,0,sizeof(ibv_cq));
++    cq->context = context;
++    cq->channel = NULL;
++    cq->cq_context = (void*)cq_name;
++    cq->cqe = cqe;
++    pthread_mutex_init(&cq->mutex,nullptr);
++    pthread_cond_init(&cq->cond,nullptr);
++    return cq;
++  } else {
++    fprintf(stderr, "ibv_create_cq: failed to create cq\n");
++    return NULL;
++  }
++}
++
++int ibv_destroy_cq(ibv_cq *cq)
++{
++  if(!cq) {
++    fprintf(stderr, "ibv_destroy_cq: cq is NULL\n");
++    exit(-1);
++  }
++  IbvCommand cmd;
++  IbvCommandResponse resp;
++  cmd.cmd_type = IBV_DESTROY_CQ;
++  cmd.cmd_id = ascending_cmd_id++;
++  strncpy(cmd.cmd_args.destroy_cq_input_args.shm_cq_name, (char*)cq->cq_context,NAME_LEN); 
++  // INFO(NCCL_NET, "ibv_destroy_cq: cmd_id = %u, cq = %s\n", cmd.cmd_id, cmd.cmd_args.destroy_cq_input_args.shm_cq_name);
++  bool re1 = SendIbvCommand(cmd);
++  bool re2 = RecvIbvCommandResponse(resp, cmd.cmd_id);
++  if (re1 && re2) {
++    if(resp.cmd_reponse.destroy_cq_output_args.retval == 0) {
++      free(cq);
++      return 0;
++    } else {
++      fprintf(stderr, "ibv_destroy_cq: there is QP that still has the specified CQ associated with this CQ\n");
++      return -1;
++    }
++  } else {
++    if(!re1)  fprintf(stderr, "ibv_destroy_cq: failed to send ibv command\n");
++    if(!re2)  fprintf(stderr, "ibv_destroy_cq: failed to receive ibv command response\n");
++    return -1;
++  }
++}
++
++int shm_ibv_poll_cq(struct ibv_cq *cq, int num_entries, struct ibv_wc *wc)
++{
++  // 根据CQ的cq_name拼接得到其在共享内存区域存放CQE的vector的名字
++  // 打开它
++  std::string cq_name((char *)cq->cq_context);
++  std::string cq_container_name = cq_name + "_container";
++  std::string cq_container_mutex_name = cq_name + "_container_mutex";
++  CQEQueue * cq_container = pSegment->find<CQEQueue>(cq_container_name.c_str()).first;
++  boost::interprocess::interprocess_mutex* cq_container_mutex = pSegment->find<boost::interprocess::interprocess_mutex>(cq_container_mutex_name.c_str()).first; 
++  boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scoped_lock_m_cq_container_mutex(*cq_container_mutex);
++  int num_polled = std::min(num_entries, (int)cq_container->size());
++
++  for(int i=0; i<num_polled; i++) {
++    shm_ibv_wc shm_wc = cq_container->front();
++    wc[i].wr_id = shm_wc.wr_id;
++    wc[i].status = shm_wc.status;
++    wc[i].opcode = shm_wc.opcode;
++    wc[i].vendor_err = shm_wc.vendor_err;
++    wc[i].byte_len = shm_wc.byte_len;
++    wc[i].imm_data = shm_wc.imm_data;
++    wc[i].qp_num = shm_wc.qp_num;
++    wc[i].src_qp = shm_wc.src_qp;
++    wc[i].wc_flags = shm_wc.wc_flags;
++    wc[i].pkey_index = shm_wc.pkey_index;
++    wc[i].slid = shm_wc.slid;
++    wc[i].sl = shm_wc.sl;
++    wc[i].dlid_path_bits = shm_wc.dlid_path_bits;
++    cq_container->erase(cq_container->begin());
++  }
++  return num_polled;
++}
++
++int shm_generate_cqe(struct ibv_cq *cq, shm_ibv_send_wr wr, uint32_t local_qpn) {
++  // 根据CQ的cq_name拼接得到其在共享内存区域存放CQE的vector的名字
++  // 打开它
++  std::string cq_name((char *)cq->cq_context);
++  std::string cq_container_name = cq_name + "_container";
++  std::string cq_container_mutex_name = cq_name + "_container_mutex";
++  CQEQueue * cq_container = pSegment->find<CQEQueue>(cq_container_name.c_str()).first;
++  boost::interprocess::interprocess_mutex* cq_container_mutex = pSegment->find<boost::interprocess::interprocess_mutex>(cq_container_mutex_name.c_str()).first; 
++  boost::interprocess::scoped_lock<boost::interprocess::interprocess_mutex> scoped_lock_m_cq_container_mutex(*cq_container_mutex);
++  struct shm_ibv_wc wc;
++  memset(&wc, 0, sizeof(wc));
++  wc.wr_id = wr.wr_id;
++  wc.status = IBV_WC_SUCCESS;
++  wc.qp_num = local_qpn;
++  wc.src_qp = 0;
++  wc.byte_len = wr.total_length;
++  wc.imm_data = wr.imm_data; 
++  switch (wr.opcode) {
++    case IBV_WR_RDMA_WRITE:
++      wc.opcode = IBV_WC_RDMA_WRITE;
++      break;
++    default:
++      fprintf(stderr, "This operation only support RDMA_WRITE in ncclIbIflush\n");
++  }
++  cq_container->push_back(wc);
++  return 0;
++}
++}
+diff --git a/src/nsibverbs/device.cc b/src/nsibverbs/device.cc
+new file mode 100644
+index 00000000..73a05a44
+--- /dev/null
++++ b/src/nsibverbs/device.cc
+@@ -0,0 +1,186 @@
++#include "verbs.h"
++#include "command.h"
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++#include <iostream>
++#include <string>
++#include <thread>
++#include <cstdlib>
++#include <cstring>
++
++
++using namespace std;
++using namespace boost::interprocess;
++
++boost::interprocess::managed_shared_memory *pSegment = NULL;
++
++extern "C" {
++int get_node_id() {
++  char *env_value = getenv("NODE_ID");
++  if (env_value == NULL) {
++    fprintf(stderr, "Environment variable NODE_ID is not set.\n");
++    return -1;
++  }
++  int node_id = std::stoi(env_value);
++  return node_id;
++}
++
++int get_gpus_per_server() {
++  char *env_value = getenv("NUM_GPUS_PER_SERVER");
++  if (env_value == NULL) {
++    fprintf(stderr, "Environment variable NUM_GPUS_PER_SERVER is not set.\n");
++    return -1;
++  }
++  int num_gpus_per_server = std::stoi(env_value);
++  return num_gpus_per_server;  
++}
++struct ibv_device **ibv_get_device_list_of_node(int *num_devices, int node_id) {
++  string shm_name = SHM_NAME_PREFIX + to_string(node_id);
++  printf("SHM NAME: %s\n", shm_name.c_str());
++  if(!pSegment) {
++    pSegment = new managed_shared_memory(open_only, shm_name.c_str());
++  }
++  string pid_of_node_name = "pid_of_node" + to_string(node_id);
++  if(!pSegment->find<int>(pid_of_node_name.c_str()).first) {
++    pid_t cur_pid = getpid();
++    int *pid_data_ptr = pSegment->construct<int>(pid_of_node_name.c_str())();
++    INFO(NCCL_INIT,"construct pid %d for node %d", cur_pid, node_id);
++    *pid_data_ptr = cur_pid;
++  }
++  cmd_queue = pSegment->find<CommandQueue>("cmd_queue").first;
++  cmd_resp_queue = pSegment->find<CommandResponseQueue>("cmd_resp_queue").first;
++  cmd_queue_mutex = pSegment->find<boost::interprocess::interprocess_mutex>("m_cmd_queue_mutex").first;
++  cmd_resp_queue_mutex = pSegment->find<boost::interprocess::interprocess_mutex>("m_cmd_resp_queue_mutex").first;
++  if(cmd_queue) {
++    printf("Good: can find cmd_queue in shared memory %s\n", shm_name.c_str());
++  } else {
++    printf("Error: cannot find cmd_queue in shared memory %s\n", shm_name.c_str());
++  }
++  if(cmd_resp_queue) {
++    printf("Good: can find cmd_resp_queue in shared memory %s\n", shm_name.c_str());
++  } else {
++    printf("Error: cannot find cmd_resp_queue in shared memory %s\n", shm_name.c_str());
++  }
++  // 只读不加锁
++  printf("before find num_devices\n");
++  int* ptr_num_devices = pSegment->find<int>("num_devices").first;
++  printf("after find num_devices\n");
++  if(ptr_num_devices) {
++    printf("before memcpy\n");
++    memcpy(num_devices, ptr_num_devices, sizeof(int));
++    printf("after memcpy\n");
++  } else {
++    fprintf(stderr,"cannot find num_devices in shared memory\n");
++  }
++  
++  /* malloc的区域在ibv_free_device_list中释放 */
++  struct ibv_device **devices = (struct ibv_device **)malloc((*num_devices)*sizeof(struct ibv_device*));
++  if(!devices) {
++    fprintf(stderr,"Error: cannot malloc memory for devices\n");
++    exit(-1);
++  } 
++  
++  for(int i=0;i<*num_devices;i++) {
++    string device_name = "qbb_net_device_" + to_string(i);
++    devices[i] = (struct ibv_device*)malloc(sizeof(struct ibv_device));
++    struct ibv_device *tmp = pSegment->find<ibv_device>(device_name.c_str()).first;
++    if(tmp) {
++      memcpy(devices[i],tmp,sizeof(struct ibv_device));
++    } else {
++      fprintf(stderr,"Error: cannot find cmd_resp_queue in shared memory %s\n", device_name.c_str());
++      exit(-1);
++    }
++    
++  }
++  printf("%s:%d return\n", __func__, __LINE__);
++  return devices;
++}
++struct ibv_device **ibv_get_device_list(int *num_devices) {
++  // mylibibverbs 中 必须需要传入nodeID才能获取对应的信息
++  // 当前实现是要求必须设置环境变量NODE_ID
++  // 此处解析NODE_ID环境变量的值作为node_id
++  int node_id = get_node_id();
++  return ibv_get_device_list_of_node(num_devices, node_id);
++}
++void ibv_free_device_list(struct ibv_device **list) {
++  // TODO: 释放资源
++  free(list);
++  list = NULL;
++}
++
++const char *ibv_get_device_name(struct ibv_device *device) {
++  return device->name;
++}
++int extract_device_id(string device_name, string name_prefix) {
++  return stoi(device_name.substr(name_prefix.size()));
++}
++struct ibv_context *ibv_open_device(struct ibv_device *device) {
++  // TODO: 释放资源
++  ibv_context *context = (ibv_context*)malloc(sizeof(ibv_context));
++  memset(context, 0, sizeof(ibv_context));
++  context->ops.post_send = shm_ibv_post_send;
++  context->ops.post_recv = shm_ibv_post_recv;
++  context->ops.poll_cq = shm_ibv_poll_cq;
++  context->device = (struct ibv_device*)malloc(sizeof(struct ibv_device));
++  memcpy(context->device, device, sizeof(struct ibv_device));
++  context->cmd_fd = extract_device_id(device->name, "ns3_qbbdev_");
++  printf("%s:%d return\n", __func__, __LINE__);
++  return context;
++}
++int ibv_close_device(ibv_context *context)
++{
++  free(context);
++  context = NULL;
++  return 0;
++}
++int ibv_query_device(struct ibv_context *context, struct ibv_device_attr *device_attr)
++{
++  // 只读 无需加锁
++  int device_id = context->cmd_fd;
++  // return 0 on success, -1 on error
++  std::string device_attr_name = "qbb_net_device_attr_" + std::to_string(device_id);
++  struct ibv_device_attr * tmp_device_attr = pSegment->find<ibv_device_attr>(device_attr_name.c_str()).first;
++
++  if(tmp_device_attr) {
++    memcpy(device_attr, tmp_device_attr, sizeof(ibv_device_attr));
++    printf("%s:%d return\n", __func__, __LINE__);
++    return 0;
++  } else {
++    return -1;
++  }
++}
++int ibv_query_port(struct ibv_context *context, uint8_t port_num, struct ibv_port_attr *port_attr) {
++  int device_id = context->cmd_fd;
++  std::string port_attr_name = "device_" + std::to_string(device_id) + "_port_attr";
++  struct ibv_port_attr * tmp_port_attr = pSegment->find<ibv_port_attr>(port_attr_name.c_str()).first;
++  if(tmp_port_attr) {
++    memcpy(port_attr,tmp_port_attr, sizeof(ibv_port_attr));
++    printf("%s:%d return\n", __func__, __LINE__);
++    return 0;
++  } else {
++    return -1;
++  };
++}
++int ibv_query_gid(struct ibv_context *context, uint8_t port_num, int index, union ibv_gid *gid) {
++  int device_id = context->cmd_fd;
++  std::string gid_name = "device_" + std::to_string(device_id) + "_gid";
++  union ibv_gid * tmp_gid = pSegment->find<union ibv_gid>(gid_name.c_str()).first;
++  if(tmp_gid) {
++    memcpy(gid, tmp_gid, sizeof(union ibv_gid));
++    // printf("%s:%d return\n", __func__, __LINE__);
++    return 0;
++  } else {
++    return -1;
++  }
++}
++
++int ibv_fork_init(void) {
++  return 0;
++}
++
++}
+\ No newline at end of file
+diff --git a/src/nsibverbs/event.cc b/src/nsibverbs/event.cc
+new file mode 100644
+index 00000000..228967f5
+--- /dev/null
++++ b/src/nsibverbs/event.cc
+@@ -0,0 +1,58 @@
++#include "verbs.h"
++#include "command.h"
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++#include <iostream>
++#include <string>
++#include <thread>
++#include <cstdlib>
++#include <cstring>
++#include <stdint.h>
++
++
++using namespace std;
++using namespace boost::interprocess;
++extern "C" {
++const char *ibv_event_type_str(enum ibv_event_type event) {
++  switch (event)
++  {
++    case IBV_EVENT_CQ_ERR:              return "IBV_EVENT_CQ_ERR";
++    case IBV_EVENT_QP_FATAL:            return "IBV_EVENT_QP_FATAL";
++    case IBV_EVENT_QP_REQ_ERR:          return "IBV_EVENT_QP_REQ_ERR";
++    case IBV_EVENT_QP_ACCESS_ERR:       return "IBV_EVENT_QP_ACCESS_ERR";
++    case IBV_EVENT_COMM_EST:            return "IBV_EVENT_COMM_EST";
++    case IBV_EVENT_SQ_DRAINED:          return "IBV_EVENT_SQ_DRAINED";
++    case IBV_EVENT_PATH_MIG:            return "IBV_EVENT_PATH_MIG";
++    case IBV_EVENT_PATH_MIG_ERR:        return "IBV_EVENT_PATH_MIG_ERR";
++    case IBV_EVENT_DEVICE_FATAL:        return "IBV_EVENT_DEVICE_FATAL";
++    case IBV_EVENT_PORT_ACTIVE:         return "IBV_EVENT_PORT_ACTIVE";
++    case IBV_EVENT_PORT_ERR:            return "IBV_EVENT_PORT_ERR";
++    case IBV_EVENT_LID_CHANGE:          return "IBV_EVENT_LID_CHANGE";
++    case IBV_EVENT_PKEY_CHANGE:         return "IBV_EVENT_PKEY_CHANGE";
++    case IBV_EVENT_SM_CHANGE:           return "IBV_EVENT_SM_CHANGE";
++    case IBV_EVENT_SRQ_ERR:             return "IBV_EVENT_SRQ_ERR";
++    case IBV_EVENT_SRQ_LIMIT_REACHED:   return "IBV_EVENT_SRQ_LIMIT_REACHED";
++    case IBV_EVENT_QP_LAST_WQE_REACHED: return "IBV_EVENT_QP_LAST_WQE_REACHED";
++    case IBV_EVENT_CLIENT_REREGISTER:   return "IBV_EVENT_CLIENT_REREGISTER";
++    case IBV_EVENT_GID_CHANGE:          return "IBV_EVENT_GID_CHANGE";
++    case IBV_EVENT_WQ_FATAL:            return "IBV_EVENT_WQ_FATAL";
++    default:                            return "Unknown";
++  }
++}
++
++int ibv_get_async_event(struct ibv_context *context,
++			struct ibv_async_event *event) {
++  while (true) {
++    sleep(1);
++  }
++}
++void ibv_ack_async_event(struct ibv_async_event *event) {
++  return;
++}
++}
++
+diff --git a/src/nsibverbs/mr.cc b/src/nsibverbs/mr.cc
+new file mode 100644
+index 00000000..c276ed13
+--- /dev/null
++++ b/src/nsibverbs/mr.cc
+@@ -0,0 +1,44 @@
++#include "verbs.h"
++#include "command.h"
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++#include <iostream>
++#include <string>
++#include <thread>
++#include <cstdlib>
++#include <cstring>
++#include <stdint.h>
++
++
++using namespace std;
++using namespace boost::interprocess;
++extern "C" {
++struct ibv_mr *ibv_reg_mr(struct ibv_pd *pd, void *addr, size_t length,
++			  int access) {
++  mlock(addr, length);
++  struct ibv_mr *mr = (struct ibv_mr *)malloc(sizeof(struct ibv_mr));
++  mr->context = pd->context;
++  mr->pd = pd;
++  mr->addr = addr;
++  mr->length = length;
++  mr->handle = 0;
++  // 虽然在模拟器中 我们不关注lkey和rkey，但是为了和NCCL对接，这里还是返回一个固定的值
++  // 因为在NCCL中 会有对于lkey和rkey非零的判断
++  mr->lkey = 100;
++  mr->rkey = 100;
++  return mr;
++}
++
++int ibv_dereg_mr(struct ibv_mr *mr) {
++  munlock(mr->addr, mr->length);
++  free(mr);
++  return 0;
++}
++
++}
++
+diff --git a/src/nsibverbs/pd.cc b/src/nsibverbs/pd.cc
+new file mode 100644
+index 00000000..06e86005
+--- /dev/null
++++ b/src/nsibverbs/pd.cc
+@@ -0,0 +1,34 @@
++#include "verbs.h"
++#include "command.h"
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++#include <iostream>
++#include <string>
++#include <thread>
++#include <cstdlib>
++#include <cstring>
++#include <stdint.h>
++
++
++using namespace std;
++using namespace boost::interprocess;
++extern "C" {
++struct ibv_pd *ibv_alloc_pd(struct ibv_context *context) {
++  struct ibv_pd * pd = (struct ibv_pd *)malloc(sizeof(struct ibv_pd));
++  pd->context = context;
++  pd->handle = 0;
++  return pd;
++}
++
++int ibv_dealloc_pd(struct ibv_pd *pd) {
++  free(pd);
++  return 0;
++}
++
++}
++
+diff --git a/src/nsibverbs/qp.cc b/src/nsibverbs/qp.cc
+new file mode 100644
+index 00000000..7ed49f49
+--- /dev/null
++++ b/src/nsibverbs/qp.cc
+@@ -0,0 +1,332 @@
++#include "verbs.h"
++#include "debug.h"
++#include "command.h"
++#include <boost/interprocess/shared_memory_object.hpp>
++#include <boost/interprocess/mapped_region.hpp>
++#include <boost/interprocess/managed_shared_memory.hpp>
++#include <boost/interprocess/sync/interprocess_mutex.hpp>
++#include <boost/interprocess/sync/interprocess_condition.hpp>
++#include <boost/interprocess/containers/vector.hpp>
++#include <boost/interprocess/allocators/allocator.hpp>
++#include <iostream>
++#include <string>
++#include <thread>
++#include <cstdlib>
++#include <cstring>
++#include <stdint.h>
++
++
++using namespace std;
++using namespace boost::interprocess;
++extern "C" {
++struct ibv_qp *ibv_create_qp(struct ibv_pd *pd,
++			     struct ibv_qp_init_attr *qp_init_attr) {
++  if((!pd) || (!qp_init_attr)) {
++    WARN("ibv_create_qp: pd or qp_init_attr is NULL");
++    exit(-1);
++  }
++  if(pd->context != qp_init_attr->send_cq->context ||
++     pd->context != qp_init_attr->recv_cq->context) {
++    WARN("ibv_create_qp: send_cq and recv_cq must be from the same context");
++    exit(-1);
++  }
++  int device_id = pd->context->cmd_fd;
++  IbvCommand cmd;
++  IbvCommandResponse resp;
++  cmd.cmd_id = ascending_cmd_id++;
++  cmd.cmd_type = IBV_CREATE_QP;
++  cmd.cmd_args.create_qp_input_args.device_id = device_id;
++  strncpy(cmd.cmd_args.create_qp_input_args.qp_init_attr.shm_send_cq_name, (char*)qp_init_attr->send_cq->cq_context,NAME_LEN);
++  strncpy(cmd.cmd_args.create_qp_input_args.qp_init_attr.shm_recv_cq_name, (char*)qp_init_attr->recv_cq->cq_context,NAME_LEN);
++  // printf("rv: %s\n",(char*)qp_init_attr->send_cq->cq_context);
++  // printf("rv: %s\n",(char*)qp_init_attr->recv_cq->cq_context);
++  // printf("shm_send_cq_name: %s\n", cmd.cmd_args.create_qp_input_args.qp_init_attr.shm_send_cq_name);
++  // printf("shm_recv_cq_name: %s\n", cmd.cmd_args.create_qp_input_args.qp_init_attr.shm_recv_cq_name);
++  cmd.cmd_args.create_qp_input_args.qp_init_attr.cap = qp_init_attr->cap;
++  cmd.cmd_args.create_qp_input_args.qp_init_attr.qp_type = qp_init_attr->qp_type;
++  cmd.cmd_args.create_qp_input_args.qp_init_attr.sq_sig_all = qp_init_attr->sq_sig_all;
++  bool re1 = SendIbvCommand(cmd);
++  bool re2 = RecvIbvCommandResponse(resp, cmd.cmd_id);
++  if (re1 && re2) {
++    char *qp_name = (char *)malloc(40);
++    strncpy(qp_name, resp.cmd_reponse.create_qp_output_args.qp_name,NAME_LEN);
++    ibv_qp *qp = (ibv_qp *) malloc(sizeof(ibv_qp));
++    
++    qp->context = pd->context;
++    qp->qp_context = (void*)qp_name;
++    qp->pd = pd;
++    qp->send_cq = qp_init_attr->send_cq;
++    qp->recv_cq = qp_init_attr->recv_cq;
++    qp->srq = qp_init_attr->srq;
++    qp->qp_num = resp.cmd_reponse.create_qp_output_args.qp_num;
++    qp->state = IBV_QPS_RESET;
++    qp->qp_type = qp_init_attr->qp_type;
++    qp->handle = -1;    //  initialized to -1 means remote_node_id
++    pthread_mutex_init(&qp->mutex,nullptr);
++    pthread_cond_init(&qp->cond,nullptr);
++    return qp;
++  } else {
++    WARN("ibv_create_qp: failed to create qp");
++    return NULL;
++  }
++}       
++
++uint32_t cal_sge_total_len(struct ibv_sge *sg_list, 
++											int num_sge)
++{
++  uint32_t total_len = 0;
++  for(int i=0;i<num_sge;i++) {
++    total_len += sg_list[i].length;
++  }
++  return total_len;
++}
++
++// 从 /proc/<pid>/mem 中读取数据	
++ssize_t read_remote_memory(pid_t pid, void *addr, void *buffer, size_t size) {	
++  char path[50];	
++  sprintf(path, "/proc/%d/mem", pid);	
++  int fd = open(path, O_RDONLY);	
++  if (fd == -1) {	
++    WARN("fail to open /proc/pid/mem");	
++    return -1;	
++  }	
++  ssize_t bytes_read = pread(fd, buffer, size, (uintptr_t)addr);	
++  if (bytes_read == -1) {	
++    WARN("fail to read %lu bytes from remote memory");	
++  } else {	
++    INFO(NCCL_INIT, "success to read %u bytes", bytes_read);	
++  }	
++  close(fd);	
++  return bytes_read;	
++}	
++// 写入数据到 /proc/<pid>/mem	
++ssize_t write_remote_memory(pid_t pid, void *addr, const void *buffer, size_t size) {	
++  char path[50];	
++  sprintf(path, "/proc/%d/mem", pid);	
++  int fd = open(path, O_WRONLY);	
++  if (fd == -1) {	
++    WARN("fail to open /proc/pid/mem");	
++    return -1;	
++  }	
++  ssize_t bytes_written = pwrite(fd, buffer, size, (uintptr_t)addr);	
++  if (bytes_written == -1) {	
++    WARN("fail to write size %lu to remote memory", size);	
++  } else {	
++    // INFO(NCCL_INIT, "success to write %u bytes", bytes_written);	
++  }	
++  close(fd);	
++  return bytes_written;	
++}	
++ssize_t post_send_data_transport(ibv_qp *qp, ibv_send_wr *wr) {	
++  if(qp->handle == -1) {	
++    return -1;	
++  }	
++  // 根据remote_node_id 找到对端节点的共享内存 从而获取对端节点的pid	
++  int remote_node_id = qp->handle;	
++  string remote_seg_name = SHM_NAME_PREFIX + to_string(remote_node_id);	
++  string pid_name = "pid_of_node" + to_string(remote_node_id);	
++  boost::interprocess::managed_shared_memory remote_segment(open_only, remote_seg_name.c_str());	
++  int *remote_pid_ptr = remote_segment.find<int>(pid_name.c_str()).first;	
++  if(!remote_pid_ptr) {	
++    WARN("post_send_data_transport: failed to find remote pid of node %d", remote_node_id);	
++    return -1;	
++  }	
++  pid_t remote_pid = *remote_pid_ptr;	
++  uintptr_t remote_addr = wr->wr.rdma.remote_addr;	
++  uintptr_t local_addr = wr->sg_list[0].addr;	
++  	
++  if(wr->opcode == IBV_WR_RDMA_READ) {	
++    return read_remote_memory(remote_pid, (void*)remote_addr, (void*)local_addr, wr->sg_list[0].length);	
++  } else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM) {	
++    return write_remote_memory(remote_pid, (void*)remote_addr, (void*)local_addr, wr->sg_list[0].length);	
++  }	
++}
++
++int shm_ibv_post_send(ibv_qp *qp, ibv_send_wr *wr, ibv_send_wr **bad_wr)
++{
++  if((!qp) || (!wr)) {
++    WARN("shm_ibv_post_send: qp or wr is NULL");
++    return -1;
++  }
++  for(ibv_send_wr *cur_wr = wr;cur_wr;cur_wr=cur_wr->next) {
++    // if(cur_wr->opcode == IBV_WR_RDMA_READ) {
++    //   post_send_data_transport(qp, cur_wr);
++    // }
++    bool enable_p2p = (strcmp(getenv("SIMU_ENABLE_GPU_P2P"), "true") == 0);
++    // printf("enable P2P: %d", enable_p2p);
++    bool is_postfifo = cur_wr->opcode == IBV_WR_RDMA_WRITE && cur_wr->imm_data == POST_FIFO_IMM && cal_sge_total_len(cur_wr->sg_list,cur_wr->num_sge) == 64;
++    bool is_src_dst_in_same_server = get_node_id() / get_gpus_per_server() == qp->handle / get_gpus_per_server();
++    if(enable_p2p && is_postfifo && is_src_dst_in_same_server) {
++      // printf("Post Fifo in same server\n");
++      post_send_data_transport(qp, cur_wr);
++      if((cur_wr->send_flags & IBV_SEND_SIGNALED) == IBV_SEND_SIGNALED) {	
++        shm_ibv_send_wr shm_wr;	
++        shm_wr.wr_id = cur_wr->wr_id;	
++        shm_wr.opcode = cur_wr->opcode;
++        shm_wr.imm_data = cur_wr->imm_data;	
++        shm_wr.total_length = cal_sge_total_len(cur_wr->sg_list,cur_wr->num_sge);	
++        shm_wr.send_flags = cur_wr->send_flags;	
++        shm_generate_cqe(qp->send_cq, shm_wr, qp->qp_num);
++      }	
++      return 0;	
++    }
++
++    // INFO(NCCL_NET, "Calling ibv_post_send %u bytes", cal_sge_total_len(cur_wr->sg_list,cur_wr->num_sge));
++    IbvCommand cmd;
++    IbvCommandResponse resp;
++    cmd.cmd_type = IBV_POST_SEND;
++    cmd.cmd_id = ascending_cmd_id++;
++    strncpy(cmd.cmd_args.post_send_input_args.shm_qp_name, (char*)qp->qp_context,NAME_LEN);
++    cmd.cmd_args.post_send_input_args.wr.wr_id = cur_wr->wr_id;
++    cmd.cmd_args.post_send_input_args.wr.opcode = cur_wr->opcode;
++    cmd.cmd_args.post_send_input_args.wr.send_flags = cur_wr->send_flags;
++    cmd.cmd_args.post_send_input_args.wr.imm_data = cur_wr->imm_data;
++    cmd.cmd_args.post_send_input_args.wr.total_length = cal_sge_total_len(cur_wr->sg_list,cur_wr->num_sge);
++    cmd.cmd_args.post_send_input_args.wr.remote_addr = cur_wr->wr.rdma.remote_addr;
++    if(is_postfifo) {
++      cmd.cmd_args.post_send_input_args.wr.is_post_fifo = 1;
++      struct ibv_send_fifo *post_fifo = (struct ibv_send_fifo *)cur_wr->sg_list[0].addr;
++      
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_addr     = post_fifo->addr;
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_size     = post_fifo->size;
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_rkeys[0] = post_fifo->rkeys[0];
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_rkeys[1] = post_fifo->rkeys[1];
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_nreqs    = post_fifo->nreqs;
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_tag      = post_fifo->tag;
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_idx      = post_fifo->idx;
++      cmd.cmd_args.post_send_input_args.wr.post_fifo_wr_id      = post_fifo->wr_id;
++      // printf("ncclIbSendFifo.wr_id =  %d\n", post_fifo->wr_id);
++    } else {
++      cmd.cmd_args.post_send_input_args.wr.is_post_fifo = 0;
++    }
++    bool re1 = SendIbvCommand(cmd);
++    // bool re2 = RecvIbvCommandResponse(resp, cmd.cmd_id);
++    bool re2 = true;
++    if (!(re1&&re2)){
++      if(!re1)  WARN("ibv_post_send: failed to send ibv command");
++      if(!re2)  WARN("ibv_post_send: failed to receive ibv command response");
++      *bad_wr = cur_wr;
++      return -1;
++    }
++  }
++  return 0;
++}
++
++int shm_ibv_post_recv(struct ibv_qp *qp, struct ibv_recv_wr *wr,
++				struct ibv_recv_wr **bad_wr)
++{
++  if((!qp) || (!wr)) {
++    WARN("shm_ibv_post_recv: qp or wr is NULL");
++    return -1;
++  }
++  for(ibv_recv_wr *cur_wr = wr;cur_wr;cur_wr=cur_wr->next) {
++    // INFO(NCCL_NET, "Calling ibv_post_recv");
++    IbvCommand cmd;
++    IbvCommandResponse resp;
++    cmd.cmd_type= IBV_POST_RECV;
++    cmd.cmd_id = ascending_cmd_id++;
++    strncpy(cmd.cmd_args.post_recv_input_args.shm_qp_name, (char*)qp->qp_context,NAME_LEN);
++    cmd.cmd_args.post_recv_input_args.wr.wr_id = cur_wr->wr_id;
++    cmd.cmd_args.post_recv_input_args.wr.total_length = cal_sge_total_len(cur_wr->sg_list, cur_wr->num_sge);
++    bool re1 = SendIbvCommand(cmd);
++    // bool re2 = RecvIbvCommandResponse(resp, cmd.cmd_id);
++    bool re2 = true;
++    if (!(re1&&re2)){
++      if(!re1)  WARN("ibv_post_recv: failed to send ibv command");
++      if(!re2)  WARN("ibv_post_recv: failed to receive ibv command response");
++      *bad_wr = cur_wr;
++      return -1;
++    }
++  }
++  return 0;
++}
++
++int ibv_modify_qp(ibv_qp *qp, ibv_qp_attr *attr, int attr_mask)
++{
++  if((!qp) || (!attr)) {
++    fprintf(stderr, "ibv_modify_qp: qp or attr is NULL\n");
++    exit(-1);
++  }
++  IbvCommand cmd;
++  IbvCommandResponse resp;
++  cmd.cmd_type = IBV_MODIFY_QP;
++  cmd.cmd_id = ascending_cmd_id++;
++  cmd.cmd_args.modify_qp_input_args.attr = *attr;
++  // memcpy(&cmd.cmd_args.modify_qp_input_args.attr, attr, sizeof(ibv_qp_attr));
++  cmd.cmd_args.modify_qp_input_args.attr_mask = attr_mask;
++  strncpy(cmd.cmd_args.modify_qp_input_args.shm_qp_name, (char*)qp->qp_context,NAME_LEN); 
++  bool re1 = SendIbvCommand(cmd);
++  bool re2 = RecvIbvCommandResponse(resp, cmd.cmd_id);
++  if (re1 && re2) {
++    // 令 qp->handle 存储对端node id
++    if(attr_mask & IBV_QP_AV) {
++      uint32_t remote_node_id = static_cast<uint32_t>((attr->ah_attr.grh.dgid.global.interface_id & 0xFFFFFFFF00000000) >> 32);  // remote NodeID 高32位
++      qp->handle = remote_node_id;
++    }
++    return 0;
++  } else {
++    if(!re1)  fprintf(stderr, "ibv_modify_qp: failed to send ibv command\n");
++    if(!re2)  fprintf(stderr, "ibv_modify_qp: failed to receive ibv command response\n");
++    return -1;
++  }
++}
++
++int ibv_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
++		 int attr_mask,
++		 struct ibv_qp_init_attr *init_attr) {
++  if(!qp) {
++    fprintf(stderr, "ibv_query_qp: qp is NULL\n");
++    return -1;
++  }
++  if((!attr) || (!init_attr)) {
++    fprintf(stderr, "ibv_query_qp: attr or init_attr is NULL\n");
++    return -1;
++  }
++  IbvCommand cmd;
++  IbvCommandResponse resp;
++  cmd.cmd_type = IBV_QUERY_QP;
++  cmd.cmd_id = ascending_cmd_id++;
++  cmd.cmd_args.query_qp_input_args.attr_mask = attr_mask;
++  strncpy(cmd.cmd_args.query_qp_input_args.shm_qp_name, (char*)qp->qp_context,NAME_LEN);
++  bool re1 = SendIbvCommand(cmd);
++  bool re2 = RecvIbvCommandResponse(resp,cmd.cmd_id);
++  if (re1 && re2) {
++    memcpy(attr, &resp.cmd_reponse.query_qp_output_args.attr, sizeof(ibv_qp_attr));
++    init_attr->qp_context = qp->qp_context;
++    init_attr->send_cq = qp->send_cq;
++    init_attr->recv_cq = qp->recv_cq;
++    init_attr->srq = qp->srq;
++    init_attr->cap = resp.cmd_reponse.query_qp_output_args.init_attr.cap;
++    init_attr->qp_type = qp->qp_type;
++    init_attr->sq_sig_all = resp.cmd_reponse.query_qp_output_args.init_attr.sq_sig_all;
++    return 0; 
++  } else {
++    if(!re1) fprintf(stderr, "ibv_query_qp: failed to send ibv command\n");
++    if(!re2) fprintf(stderr, "ibv_query_qp: failed to receive ibv command response\n");
++    return -1;
++  }
++}
++int ibv_destroy_qp(ibv_qp *qp)
++{
++  if(!qp) {
++    fprintf(stderr, "ibv_destroy_qp: qp is NULL\n");
++    exit(-1);
++  }
++  IbvCommand cmd;
++  IbvCommandResponse resp;
++  cmd.cmd_type = IBV_DESTROY_QP;
++  cmd.cmd_id = ascending_cmd_id++;
++  strncpy(cmd.cmd_args.destroy_qp_input_args.shm_qp_name, (char*)qp->qp_context,NAME_LEN); 
++  // INFO(NCCL_NET, "ibv_destroy_qp: cmd_id = %u, qp = %s\n", cmd.cmd_id, cmd.cmd_args.destroy_qp_input_args.shm_qp_name);
++  bool re1 = SendIbvCommand(cmd);
++  bool re2 = RecvIbvCommandResponse(resp, cmd.cmd_id);
++  if (re1 && re2) {
++    free(qp);
++    return 0;
++  } else {
++    if(!re1)  fprintf(stderr, "ibv_destroy_qp: failed to send ibv command\n");
++    if(!re2)  fprintf(stderr, "ibv_destroy_qp: failed to receive ibv command response\n");
++    return -1;
++  }
++}
++}
+diff --git a/src/transport/net_ib.cc b/src/transport/net_ib.cc
+index d828c980..c54e969f 100644
+--- a/src/transport/net_ib.cc
++++ b/src/transport/net_ib.cc
+@@ -11,6 +11,8 @@
+ #include "graph.h"
+ #include "utils.h"
+ #include "param.h"
++#include "hca_map.h"
++#include "command.h"
+ 
+ #include <assert.h>
+ #include <pthread.h>
+@@ -26,6 +28,9 @@
+ #include "ibvwrap.h"
+ 
+ #define MAXNAMESIZE 64
++
++std::map<int, std::map<std::string, std::string>> simhca2realhca_map;
++
+ static char ncclIbIfName[MAX_IF_NAME_SIZE+1];
+ static union ncclSocketAddress ncclIbIfAddr;
+ 
+@@ -425,10 +430,21 @@ NCCL_PARAM(IbMergeNics, "IB_MERGE_NICS", 1);
+ 
+ static ncclResult_t ncclIbGetPciPath(char* devName, char** path, int* realPort) {
+   char devicePath[PATH_MAX];
+-  snprintf(devicePath, PATH_MAX, "/sys/class/infiniband/%s/device", devName);
++  int ns3nodeId = get_node_id();
++  std::string sim_hca = devName;
++  if(simhca2realhca_map.empty()) {
++    load_hca_map();
++  }
++  if(!(simhca2realhca_map.count(ns3nodeId) && simhca2realhca_map[ns3nodeId].count(sim_hca))) {
++    WARN("Cannot find real hca for node %d HCA %s", ns3nodeId, sim_hca.c_str());
++    return ncclInternalError;
++  }
++  std::string real_hca = simhca2realhca_map[ns3nodeId][sim_hca];
++  INFO(NCCL_INIT,"HCA Map %d %s -> %s", ns3nodeId, sim_hca.c_str(), real_hca.c_str());
++  snprintf(devicePath, PATH_MAX, "/sys/class/infiniband/%s/device", real_hca.c_str());
+   char* p = realpath(devicePath, NULL);
+   if (p == NULL) {
+-    WARN("Could not find real path of %s (%s)", devName, devicePath);
++    WARN("Could not find real path of %s (%s)", real_hca.c_str(), devicePath);
+   } else {
+     // Merge multi-port NICs into the same PCI device
+     p[strlen(p)-1] = '0';
+@@ -530,11 +546,12 @@ ncclResult_t ncclIbInit(ncclDebugLogger_t logFunction) {
+       int nUserIfs = parseStringList(userIbEnv, userIfs, MAX_IB_DEVS);
+ 
+       if (ncclSuccess != wrap_ibv_get_device_list(&devices, &nIbDevs)) { ret = ncclInternalError; goto fail; }
+-
++      INFO(NCCL_INIT, "wrap_ibv_get_device_list get %d devices", nIbDevs);
+       // Should NCCL merge multi-port devices into one?
+       int mergeNics;
+       mergeNics = ncclParamIbMergeNics();
+ build_ib_list:
++      INFO(NCCL_NET, "NET/IB : Using %d IB ports found on this system", nIbDevs);
+       for (int d=0; d<nIbDevs && ncclNIbDevs<MAX_IB_DEVS; d++) {
+         struct ibv_context * context;
+         if (ncclSuccess != wrap_ibv_open_device(&context, devices[d]) || context == NULL) {
+@@ -561,6 +578,7 @@ build_ib_list:
+ 
+           // check against user specified HCAs/ports
+           if (! (matchIfList(devices[d]->name, port_num, userIfs, nUserIfs, searchExact) ^ searchNot)) {
++            INFO(NCCL_NET, "Line %d: matchIfList returns false", __LINE__);
+             continue;
+           }
+           pthread_mutex_init(&ncclIbDevs[ncclNIbDevs].lock, NULL);
+@@ -690,10 +708,8 @@ ncclResult_t ncclIbDevices(int* ndev) {
+ #define KNL_MODULE_LOADED(a) ((access(a, F_OK) == -1) ? 0 : 1)
+ static int ncclIbGdrModuleLoaded = 0; // 1 = true, 0 = false
+ static void ibGdrSupportInitOnce() {
+-  // Check for the nv_peer_mem module being loaded
+-  ncclIbGdrModuleLoaded = KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem/version") ||
+-                          KNL_MODULE_LOADED("/sys/kernel/mm/memory_peers/nv_mem_nc/version") ||
+-                          KNL_MODULE_LOADED("/sys/module/nvidia_peermem/version");
++  // 在模拟器中 设定支持GDR
++  ncclIbGdrModuleLoaded = 1;
+ }
+ ncclResult_t ncclIbGdrSupport() {
+   static pthread_once_t once = PTHREAD_ONCE_INIT;
+@@ -1091,13 +1107,13 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
+         qpAttr.ah_attr.is_global = 0;
+         qpAttr.ah_attr.dlid = info->lid;
+     } else {
+-	uint16_t flid = ncclIbExtractFlid(&info->gid);
++	      uint16_t flid = ncclIbExtractFlid(&info->gid);
+         if (flid == 0) {
+           WARN("Warning: remote FLID configured as zero even when endpoints are on different subnets, using dlid as fallback");
+           qpAttr.ah_attr.dlid = info->lid;
+-	} else {
+-          qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
+-	}
++        } else {
++                qpAttr.ah_attr.dlid = ncclIbExtractFlid(&info->gid);
++        }
+         qpAttr.ah_attr.is_global = 1;
+         qpAttr.ah_attr.grh.dgid.global.subnet_prefix = info->gid.global.subnet_prefix;
+         qpAttr.ah_attr.grh.dgid.global.interface_id = info->gid.global.interface_id;
+@@ -1108,6 +1124,7 @@ ncclResult_t ncclIbRtrQp(struct ibv_qp* qp, struct ncclIbGidInfo* sGidInfo, uint
+   qpAttr.ah_attr.sl = ncclParamIbSl();
+   qpAttr.ah_attr.src_path_bits = 0;
+   qpAttr.ah_attr.port_num = info->ib_port;
++  // INFO(NCCL_NET, "modify qp(qp_num=%d) with dst_qp_num=%d dgid.global.subnet_prefix=%x, dgid.global.interface_id=%x", qp->qp_num, qpAttr.dest_qp_num, qpAttr.ah_attr.grh.dgid.global.subnet_prefix, qpAttr.ah_attr.grh.dgid.global.interface_id);
+   NCCLCHECK(wrap_ibv_modify_qp(qp, &qpAttr, IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER));
+   return ncclSuccess;
+ }
+@@ -1806,6 +1823,8 @@ ncclResult_t ncclIbMultiSend(struct ncclIbSendComm* comm, int slot) {
+     }
+ 
+     struct ibv_send_wr* bad_wr;
++    // if(get_node_id() == 0)
++    //   INFO(NCCL_ALL, "In MultiSend, [%d] QP(%d,%d) call wrap_ibv_post_send", GetSimTime(1212), get_node_id(), qp->qp->qp_num );
+     NCCLCHECK(wrap_ibv_post_send(qp->qp, comm->wrs, &bad_wr));
+ 
+     for (int r=0; r<nreqs; r++) {
+@@ -1978,7 +1997,7 @@ ncclResult_t ncclIbPostFifo(struct ncclIbRecvComm* comm, int n, void** data, int
+     wr.wr_id = req - comm->base.reqs;
+     ncclIbAddEvent(req, ctsQp->devIndex, &comm->devs[ctsQp->devIndex].base);
+   }
+-
++  wr.imm_data = POST_FIFO_IMM;
+   struct ibv_send_wr* bad_wr;
+   NCCLCHECK(wrap_ibv_post_send(ctsQp->qp, &wr, &bad_wr));
+   comm->remFifo.fifoTail++;
+@@ -2018,6 +2037,7 @@ ncclResult_t ncclIbIrecv(void* recvComm, int n, void** data, int* sizes, int* ta
+   for (int i = 0; i < nqps; i++) {
+     struct ncclIbQp* qp = comm->base.qps + comm->base.qpIndex;
+     ncclIbAddEvent(req, qp->devIndex, &comm->devs[qp->devIndex].base);
++    // INFO(NCCL_NET, "wrap_ibv_post_recv wrID = %lu", wr.wr_id);
+     NCCLCHECK(wrap_ibv_post_recv(qp->qp, &wr, &bad_wr));
+     comm->base.qpIndex = (comm->base.qpIndex+1)%comm->base.nqps;
+   }
