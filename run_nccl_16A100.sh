@@ -1,5 +1,41 @@
-NCCL_PROCESS_IP="xxx"
-NS3_PROCESS_IP="xxx"
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---- Configurable parameters (passed via command line) ----
+NCCL_PROCESS_IP=""
+NS3_PROCESS_IP=""
+NUM_PROC=16
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") --nccl-ip <IP> --ns3-ip <IP> [--num-proc <N>] [-h]
+
+  -n, --nccl-ip   IP of the NCCL process host (required)
+  -s, --ns3-ip    IP of the ns-3 process host (required)
+  -p, --num-proc  number of MPI processes / GPUs (default: 16)
+  -h, --help      show this help and exit
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--nccl-ip)  NCCL_PROCESS_IP="$2"; shift 2 ;;
+    -s|--ns3-ip)   NS3_PROCESS_IP="$2";  shift 2 ;;
+    -p|--num-proc) NUM_PROC="$2";        shift 2 ;;
+    -h|--help)     usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+# ---- Required-argument validation: fail fast when missing ----
+missing=()
+[[ -z "$NCCL_PROCESS_IP" ]] && missing+=("--nccl-ip")
+[[ -z "$NS3_PROCESS_IP"  ]] && missing+=("--ns3-ip")
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "Error: missing required argument(s): ${missing[*]}" >&2
+  usage
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # Files referenced by the mpirun command below. All paths are RELATIVE to this
@@ -29,7 +65,7 @@ NS3_PROCESS_IP="xxx"
 #       Console log captured from this 16x A100, 64MB all_reduce demo run.
 # ---------------------------------------------------------------------------
 
-mpirun --allow-run-as-root -H ${NCCL_PROCESS_IP}:16 -np 16 --map-by ppr:16:node \
+mpirun --allow-run-as-root -H ${NCCL_PROCESS_IP}:${NUM_PROC} -np ${NUM_PROC} --map-by ppr:${NUM_PROC}:node \
        --mca btl_openib_warn_no_device_params_found 0 --mca btl_tcp_if_include bond0 \
         -x NCCL_PROTO=Simple -x NCCL_IB_SPLIT_DATA_ON_QPS=1 -x NCCL_NET_PLUGIN=0 \
         -x NCCL_IB_SL=5 -x NCCL_IB_TC=136 -x NCCL_IB_TIMEOUT=22 -x NCCL_IB_HCA=ns3_qbbdev \
@@ -41,4 +77,4 @@ mpirun --allow-run-as-root -H ${NCCL_PROCESS_IP}:16 -np 16 --map-by ppr:16:node 
         -x SIM_CHANNEL_FILE=./graph_info_1.xml \
         -x SIM_AVOID_CROSS_RAIL=1 -x START_NODE_ID=0 \
         -x LD_PRELOAD=./nccl_hack_rdma/build/lib/libnccl.so.2 \
-        ./nccl-tests-modify/build/all_reduce_perf       -A ${NS3_PROCESS_IP} -b 64MB -e 64MB -f 2 -g 1 -w 0 -n 1 -c 0 | tee ./demo_16A100_allreduce_64MB.log
+        ./nccl-tests-modify/build/all_reduce_perf       -A ${NS3_PROCESS_IP} -b 64MB -e 64MB -f 2 -g 1 -w 0 -n 1 -c 0 | tee ./demo_${NUM_PROC}A100_allreduce_64MB.log
