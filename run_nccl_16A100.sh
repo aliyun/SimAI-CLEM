@@ -4,6 +4,9 @@ set -euo pipefail
 # ---- Configurable parameters (passed via command line) ----
 NCCL_PROCESS_IP=""
 NS3_PROCESS_IP=""
+# NUM_PROC is the number of processes that participate in the collective
+# communication as SIMULATED by SimAI-CLEM. It can be larger than the number of
+# physical GPUs; e.g. this default 16 can be changed to 32 / 64.
 NUM_PROC=16
 
 usage() {
@@ -12,7 +15,8 @@ Usage: $(basename "$0") --nccl-ip <IP> --ns3-ip <IP> [--num-proc <N>] [-h]
 
   -n, --nccl-ip   IP of the NCCL process host (required)
   -s, --ns3-ip    IP of the ns-3 process host (required)
-  -p, --num-proc  number of MPI processes / GPUs (default: 16)
+  -p, --num-proc  number of collective-communication processes simulated by
+                  SimAI-CLEM; may exceed the physical GPU count (default: 16)
   -h, --help      show this help and exit
 EOF
 }

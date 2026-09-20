@@ -19,9 +19,9 @@ We are open-sourcing SimAI-CLEM in a step-by-step manner. The plan and the curre
 
 SimAI-CLEM operates through a modular architecture composed of three primary components:
 
-### 1. `simulator-network`
+### 1. `ns-3-alibabacloud`
 
-> **Repository Notice**: The `simulator-network` component is in [`aliyun/ns-3-alibabacloud`](https://github.com/aliyun/ns-3-alibabacloud) — and is maintained on the [`feat/ipc-middleware`](https://github.com/aliyun/ns-3-alibabacloud/tree/feat/ipc-middleware) branch. Please clone that repository and check out this branch to obtain the network simulator component described below.
+> **Repository Notice**: The `ns-3-alibabacloud` component is in [`aliyun/ns-3-alibabacloud`](https://github.com/aliyun/ns-3-alibabacloud) — and is maintained on the [`dev/clem`](https://github.com/aliyun/ns-3-alibabacloud/tree/dev/clem) branch. Please clone that repository and check out this branch to obtain the network simulator component described below.
 
 This section contains the key components of SimAI-CLEM as follows:
 - **Actual Data Transfer Engine**: Handles essential control-message exchanges between CCL processes. 
@@ -67,7 +67,7 @@ git clone https://github.com/NVIDIA/nccl.git nccl_hack_rdma
 cd nccl_hack_rdma
 # nccl_patch targets this exact upstream commit (NCCL v2.23.4 series):
 git checkout 2ea4ee94bfb04c886c79ccae60ac9961000fdee2
-git apply /path/to/SimAI-CLEM/nccl_patch
+git apply ../nccl_patch
 ```
 
 ### Step 2: Compile the Modified NCCL
@@ -85,10 +85,10 @@ After compilation, the built artifacts will be available under `nccl_hack_rdma/b
 ### Step 3: Build the ns-3 Binary
 
 ```bash
-# NOTE: `simulator-network` is NOT in this repository.
-# First clone https://github.com/aliyun/ns-3-alibabacloud and check out its feat/ipc-middleware branch,
+# NOTE: `ns-3-alibabacloud` is NOT in this repository.
+# First clone https://github.com/aliyun/ns-3-alibabacloud and check out its dev/clem branch,
 # then switch to that branch's directory before running the commands below.
-cd simulator-network/simulation/
+cd ns-3-alibabacloud/simulation/
 source build.sh # see build.sh for more details
 ```
 
@@ -99,7 +99,7 @@ git clone https://github.com/NVIDIA/nccl-tests.git nccl-tests-modify
 cd nccl-tests-modify
 # nccl_tests_patch targets this exact upstream commit (nccl-tests v2.13.11):
 git checkout 8dfeab9eb9bdfdf13503e71e1f33e7f8a208b540
-git apply /path/to/SimAI-CLEM/nccl_tests_patch
+git apply ../nccl_tests_patch
 ```
 
 Replace `{MPI_ABS_PATH}` and `{NCCL_HACK_RDMA_ABS_PATH}` with the actual absolute paths, then compile:
@@ -115,10 +115,10 @@ make MPI=1 MPI_HOME={MPI_ABS_PATH} NCCL_HOME={NCCL_HACK_RDMA_ABS_PATH}/build
 Start the ns-3 simulation engine first. Use the following command:
 
 ```bash
-# NOTE: `simulator-network` is NOT in this repository.
-# First clone https://github.com/aliyun/ns-3-alibabacloud and check out its feat/ipc-middleware branch,
+# NOTE: `ns-3-alibabacloud` is NOT in this repository.
+# First clone https://github.com/aliyun/ns-3-alibabacloud and check out its dev/clem branch,
 # then switch to that branch's directory before running the commands below.
-cd simulator-network/simulation/
+cd ns-3-alibabacloud/simulation/
 ./ns3 run 'scratch/QpReuseSimInfra {CONFIG_FILE_PATH} --numnodes={NUM_RANKS}'
 # For example:
 # ./ns3 run 'scratch/QpReuseSimInfra mix/incast/config_example.sh --numnodes=16'
@@ -129,8 +129,8 @@ cd simulator-network/simulation/
 
 Example configuration files can be found at:
 ```
-# NOTE: located in the feat/ipc-middleware branch of aliyun/ns-3-alibabacloud (not in this repository)
-simulator-network/simulation/mix/incast/config_example.sh
+# NOTE: located in the dev/clem branch of aliyun/ns-3-alibabacloud (not in this repository)
+ns-3-alibabacloud/simulation/mix/incast/config_example.sh
 ```
 which includes comprehensive documentation of tunable parameters such as topology, NIC settings, etc.
 
@@ -138,15 +138,24 @@ which includes comprehensive documentation of tunable parameters such as topolog
 
 Ensure the ns-3 backend is running before starting the nccl-tests processes.
 
+`run_nccl_16A100.sh` now takes the process IPs as command-line arguments (run it
+with `bash`, do not `source` it):
+
 ```bash
-# See run_nccl_16A100.sh for more details.  
-source run_nccl_16A100.sh
+# See run_nccl_16A100.sh for more details.
+bash run_nccl_16A100.sh --nccl-ip <NCCL_PROCESS_IP> --ns3-ip <NS3_PROCESS_IP> [--num-proc <N>]
+# For example:
+# bash run_nccl_16A100.sh --nccl-ip 10.0.0.1 --ns3-ip 10.0.0.2 --num-proc 16
 ```
+
+- `--nccl-ip` / `-n`: IP of the NCCL process host (required)
+- `--ns3-ip` / `-s`: IP of the ns-3 process host (required)
+- `--num-proc` / `-p`: number of processes participating in the collective communication as simulated by SimAI-CLEM (optional, default `16`). This can be **larger than the number of physical GPUs** — e.g. `16` / `32` / `64`.
 
 
 > **Tested Platform**: So far, we have only conducted experiments on servers equipped with **8x A100 GPUs**. The code in this project has not yet been tested on any other platform.
 
-> **GPU-Free Demo**: To let users learn and understand the design philosophy of SimAI-CLEM's **bidirectional interaction framework** even without access to a GPU environment, we provide a demo example under [`RDMA_demo`](https://github.com/aliyun/ns-3-alibabacloud/tree/feat/ipc-middleware/RDMA_demo) in the `simulator-network` repository.
+> **GPU-Free Demo**: To let users learn and understand the design philosophy of SimAI-CLEM's **bidirectional interaction framework** even without access to a GPU environment, we provide a demo example under [`RDMA_demo`](https://github.com/aliyun/ns-3-alibabacloud/tree/dev/clem/RDMA_demo) in the `ns-3-alibabacloud` repository.
 
 > ⚠️ Important: The order of execution matters. The ns-3 simulation must be started prior to launching any NCCL rank to ensure proper IPC handshake and initialization.
 
