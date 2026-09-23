@@ -1,0 +1,1147 @@
+('./src/applications/astra-sim/network_frontend', ['README.md'])
+('./src/applications/astra-sim/network_frontend/ns3', ['seventh.cc', 'AstraSimNetwork_hierarchical.cc', 'AstraSimNetwork.h', 'AstraSimNetwork_Global.cc', 'entry.h', 'README.md', 'AstraSimNetwork.cc', 'myTCP.cc', 'AstraSimNetwork_a2a.cc'])
+Success in opening system file
+Var is: scheduling-policy: ,val is: LIFO
+Var is: endpoint-delay: ,val is: 80
+Var is: active-chunks-per-dimension: ,val is: 1
+Var is: preferred-dataset-splits: ,val is: 1
+Var is: boost-mode: ,val is: 0
+Var is: all-reduce-implementation: ,val is: ring_ring
+Var is: all-gather-implementation: ,val is: ring_ring
+Var is: reduce-scatter-implementation: ,val is: ring_ring
+Var is: all-to-all-implementation: ,val is: oneDirect
+Var is: collective-optimization: ,val is: localBWAware
+Var is:  ,val is: localBWAware
+The final active chunks per dimension 1 after allocating to queues is: 1
+ring of node 0, id: 0 dimension: local total nodes in ring: 8 index in ring: 0 offset: 1total nodes in ring: 8
+ring of node 0, id: 0 dimension: local total nodes in ring: 2 index in ring: 0 offset: 8total nodes in ring: 2
+ring of node 0, id: 0 dimension: local total nodes in ring: 8 index in ring: 0 offset: 1total nodes in ring: 8
+ring of node 0, id: 0 dimension: local total nodes in ring: 2 index in ring: 0 offset: 8total nodes in ring: 2
+ring of node 0, id: 0 dimension: local total nodes in ring: 8 index in ring: 0 offset: 1total nodes in ring: 8
+ring of node 0, id: 0 dimension: local total nodes in ring: 2 index in ring: 0 offset: 8total nodes in ring: 2
+ring of node 0, id: 0 dimension: local total nodes in ring: 16 index in ring: 0 offset: 1total nodes in ring: 16
+total nodes: 16
+LogGP model, the local reduction delay is: 1
+LogGP model, the local reduction delay is: 1
+LogGP model, the local reduction delay is: 1
+LogGP model, the local reduction delay is: 1
+Shared bus modeling enabled? false
+LogGP model, the L is:0 ,o is: 0 ,g is: 0 ,G is: 0.0038
+communication delay (in the case of disabled shared bus): 80
+Shared bus modeling enabled? false
+LogGP model, the L is:0 ,o is: 0 ,g is: 0 ,G is: 0
+communication delay (in the case of disabled shared bus): 80
+Success in opening workload file
+id: microAllReduce_256M , depen: -1 , wg_comp_time: 5
+type: MICRO ,num passes: 1 ,lines: 1 compute scale: 1 ,comm scale: 1
+stat path: scratch/results/ ,total rows: 1 ,stat row: 0
+CSV path and filename: scratch/results/detailed_0.csv
+Success in opening CSV file for writing the report.
+CSV path and filename: scratch/results/EndToEnd_0.csv
+Success in opening CSV file for writing the report.
+QP is enabled 
+maxRtt=3440 maxBdp=43000
+Running Simulation.
+info: all-reduce weight grad collective issued for layer: microAllReduce_256M with size: 268435456, involved dimensions:  1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+Starting Simulation...
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10000 at the tick 80 ns
+qp finish src 1 dst 2 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 2 dst 3 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 3 dst 4 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 4 dst 5 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 5 dst 6 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 6 dst 7 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 7 dst 0 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 0 dst 1 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 9 dst 10 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 10 dst 11 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 11 dst 12 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 12 dst 13 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 13 dst 14 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 14 dst 15 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 15 dst 8 port 10000 size 33554432 at the tick 173919 ns
+qp finish src 8 dst 9 port 10000 size 33554432 at the tick 173919 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10001 at the tick 174029 ns
+qp finish src 3 dst 4 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 4 dst 5 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 5 dst 6 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 6 dst 7 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 7 dst 0 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 0 dst 1 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 1 dst 2 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 2 dst 3 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 11 dst 12 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 12 dst 13 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 13 dst 14 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 14 dst 15 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 15 dst 8 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 8 dst 9 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 9 dst 10 port 10001 size 33554432 at the tick 347868 ns
+qp finish src 10 dst 11 port 10001 size 33554432 at the tick 347868 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10002 at the tick 347978 ns
+qp finish src 5 dst 6 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 6 dst 7 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 7 dst 0 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 0 dst 1 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 1 dst 2 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 2 dst 3 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 3 dst 4 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 4 dst 5 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 13 dst 14 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 14 dst 15 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 15 dst 8 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 8 dst 9 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 9 dst 10 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 10 dst 11 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 11 dst 12 port 10002 size 33554432 at the tick 521817 ns
+qp finish src 12 dst 13 port 10002 size 33554432 at the tick 521817 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10003 at the tick 521927 ns
+qp finish src 7 dst 0 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 0 dst 1 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 1 dst 2 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 2 dst 3 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 3 dst 4 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 4 dst 5 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 5 dst 6 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 6 dst 7 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 15 dst 8 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 8 dst 9 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 9 dst 10 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 10 dst 11 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 11 dst 12 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 12 dst 13 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 13 dst 14 port 10003 size 33554432 at the tick 695766 ns
+qp finish src 14 dst 15 port 10003 size 33554432 at the tick 695766 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10004 at the tick 695876 ns
+qp finish src 1 dst 2 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 2 dst 3 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 3 dst 4 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 4 dst 5 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 5 dst 6 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 6 dst 7 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 7 dst 0 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 0 dst 1 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 9 dst 10 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 10 dst 11 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 11 dst 12 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 12 dst 13 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 13 dst 14 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 14 dst 15 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 15 dst 8 port 10004 size 33554432 at the tick 869715 ns
+qp finish src 8 dst 9 port 10004 size 33554432 at the tick 869715 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10005 at the tick 869825 ns
+qp finish src 3 dst 4 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 4 dst 5 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 5 dst 6 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 6 dst 7 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 7 dst 0 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 0 dst 1 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 1 dst 2 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 2 dst 3 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 11 dst 12 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 12 dst 13 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 13 dst 14 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 14 dst 15 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 15 dst 8 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 8 dst 9 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 9 dst 10 port 10005 size 33554432 at the tick 1043664 ns
+qp finish src 10 dst 11 port 10005 size 33554432 at the tick 1043664 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10006 at the tick 1043774 ns
+qp finish src 5 dst 6 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 6 dst 7 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 7 dst 0 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 0 dst 1 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 1 dst 2 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 2 dst 3 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 3 dst 4 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 4 dst 5 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 13 dst 14 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 14 dst 15 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 15 dst 8 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 8 dst 9 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 9 dst 10 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 10 dst 11 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 11 dst 12 port 10006 size 33554432 at the tick 1217613 ns
+qp finish src 12 dst 13 port 10006 size 33554432 at the tick 1217613 ns
+msg_size: 16777216
+rank 6 sends 16777216 bytes to rank 14
+src 6 -> dst 14 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 7 sends 16777216 bytes to rank 15
+src 7 -> dst 15 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 0 sends 16777216 bytes to rank 8
+src 0 -> dst 8 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 1 sends 16777216 bytes to rank 9
+src 1 -> dst 9 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 2 sends 16777216 bytes to rank 10
+src 2 -> dst 10 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 3 sends 16777216 bytes to rank 11
+src 3 -> dst 11 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 4 sends 16777216 bytes to rank 12
+src 4 -> dst 12 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 5 sends 16777216 bytes to rank 13
+src 5 -> dst 13 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 14 sends 16777216 bytes to rank 6
+src 14 -> dst 6 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 15 sends 16777216 bytes to rank 7
+src 15 -> dst 7 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 8 sends 16777216 bytes to rank 0
+src 8 -> dst 0 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 9 sends 16777216 bytes to rank 1
+src 9 -> dst 1 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 10 sends 16777216 bytes to rank 2
+src 10 -> dst 2 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 11 sends 16777216 bytes to rank 3
+src 11 -> dst 3 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 12 sends 16777216 bytes to rank 4
+src 12 -> dst 4 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+msg_size: 16777216
+rank 13 sends 16777216 bytes to rank 5
+src 13 -> dst 5 size 16777216 tag 0 src_port 10000 at the tick 1217803 ns
+qp finish src 6 dst 14 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 7 dst 15 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 0 dst 8 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 1 dst 9 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 2 dst 10 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 3 dst 11 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 4 dst 12 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 5 dst 13 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 14 dst 6 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 15 dst 7 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 8 dst 0 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 9 dst 1 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 10 dst 2 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 11 dst 3 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 12 dst 4 port 10000 size 16777216 at the tick 2943287 ns
+qp finish src 13 dst 5 port 10000 size 16777216 at the tick 2943287 ns
+msg_size: 16777216
+rank 14 sends 16777216 bytes to rank 6
+src 14 -> dst 6 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 15 sends 16777216 bytes to rank 7
+src 15 -> dst 7 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 8 sends 16777216 bytes to rank 0
+src 8 -> dst 0 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 9 sends 16777216 bytes to rank 1
+src 9 -> dst 1 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 10 sends 16777216 bytes to rank 2
+src 10 -> dst 2 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 11 sends 16777216 bytes to rank 3
+src 11 -> dst 3 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 12 sends 16777216 bytes to rank 4
+src 12 -> dst 4 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 13 sends 16777216 bytes to rank 5
+src 13 -> dst 5 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 6 sends 16777216 bytes to rank 14
+src 6 -> dst 14 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 7 sends 16777216 bytes to rank 15
+src 7 -> dst 15 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 0 sends 16777216 bytes to rank 8
+src 0 -> dst 8 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 1 sends 16777216 bytes to rank 9
+src 1 -> dst 9 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 2 sends 16777216 bytes to rank 10
+src 2 -> dst 10 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 3 sends 16777216 bytes to rank 11
+src 3 -> dst 11 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 4 sends 16777216 bytes to rank 12
+src 4 -> dst 12 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+msg_size: 16777216
+rank 5 sends 16777216 bytes to rank 13
+src 5 -> dst 13 size 16777216 tag 0 src_port 10001 at the tick 2943397 ns
+qp finish src 14 dst 6 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 15 dst 7 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 8 dst 0 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 9 dst 1 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 10 dst 2 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 11 dst 3 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 12 dst 4 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 13 dst 5 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 6 dst 14 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 7 dst 15 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 0 dst 8 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 1 dst 9 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 2 dst 10 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 3 dst 11 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 4 dst 12 port 10001 size 16777216 at the tick 4668881 ns
+qp finish src 5 dst 13 port 10001 size 16777216 at the tick 4668881 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10007 at the tick 4669041 ns
+qp finish src 7 dst 0 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 0 dst 1 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 1 dst 2 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 2 dst 3 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 3 dst 4 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 4 dst 5 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 5 dst 6 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 6 dst 7 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 15 dst 8 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 8 dst 9 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 9 dst 10 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 10 dst 11 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 11 dst 12 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 12 dst 13 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 13 dst 14 port 10007 size 33554432 at the tick 4842880 ns
+qp finish src 14 dst 15 port 10007 size 33554432 at the tick 4842880 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10008 at the tick 4842960 ns
+qp finish src 1 dst 2 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 2 dst 3 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 3 dst 4 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 4 dst 5 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 5 dst 6 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 6 dst 7 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 7 dst 0 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 0 dst 1 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 9 dst 10 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 10 dst 11 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 11 dst 12 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 12 dst 13 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 13 dst 14 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 14 dst 15 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 15 dst 8 port 10008 size 33554432 at the tick 5016799 ns
+qp finish src 8 dst 9 port 10008 size 33554432 at the tick 5016799 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10009 at the tick 5016879 ns
+qp finish src 3 dst 4 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 4 dst 5 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 5 dst 6 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 6 dst 7 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 7 dst 0 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 0 dst 1 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 1 dst 2 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 2 dst 3 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 11 dst 12 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 12 dst 13 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 13 dst 14 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 14 dst 15 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 15 dst 8 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 8 dst 9 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 9 dst 10 port 10009 size 33554432 at the tick 5190718 ns
+qp finish src 10 dst 11 port 10009 size 33554432 at the tick 5190718 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10010 at the tick 5190798 ns
+qp finish src 5 dst 6 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 6 dst 7 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 7 dst 0 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 0 dst 1 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 1 dst 2 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 2 dst 3 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 3 dst 4 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 4 dst 5 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 13 dst 14 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 14 dst 15 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 15 dst 8 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 8 dst 9 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 9 dst 10 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 10 dst 11 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 11 dst 12 port 10010 size 33554432 at the tick 5364637 ns
+qp finish src 12 dst 13 port 10010 size 33554432 at the tick 5364637 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10011 at the tick 5364717 ns
+qp finish src 7 dst 0 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 0 dst 1 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 1 dst 2 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 2 dst 3 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 3 dst 4 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 4 dst 5 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 5 dst 6 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 6 dst 7 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 15 dst 8 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 8 dst 9 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 9 dst 10 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 10 dst 11 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 11 dst 12 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 12 dst 13 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 13 dst 14 port 10011 size 33554432 at the tick 5538556 ns
+qp finish src 14 dst 15 port 10011 size 33554432 at the tick 5538556 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10012 at the tick 5538636 ns
+qp finish src 1 dst 2 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 2 dst 3 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 3 dst 4 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 4 dst 5 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 5 dst 6 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 6 dst 7 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 7 dst 0 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 0 dst 1 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 9 dst 10 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 10 dst 11 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 11 dst 12 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 12 dst 13 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 13 dst 14 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 14 dst 15 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 15 dst 8 port 10012 size 33554432 at the tick 5712475 ns
+qp finish src 8 dst 9 port 10012 size 33554432 at the tick 5712475 ns
+msg_size: 33554432
+rank 2 sends 33554432 bytes to rank 3
+src 2 -> dst 3 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 3 sends 33554432 bytes to rank 4
+src 3 -> dst 4 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 4 sends 33554432 bytes to rank 5
+src 4 -> dst 5 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 5 sends 33554432 bytes to rank 6
+src 5 -> dst 6 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 6 sends 33554432 bytes to rank 7
+src 6 -> dst 7 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 7 sends 33554432 bytes to rank 0
+src 7 -> dst 0 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 0 sends 33554432 bytes to rank 1
+src 0 -> dst 1 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 1 sends 33554432 bytes to rank 2
+src 1 -> dst 2 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 10 sends 33554432 bytes to rank 11
+src 10 -> dst 11 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 11 sends 33554432 bytes to rank 12
+src 11 -> dst 12 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 12 sends 33554432 bytes to rank 13
+src 12 -> dst 13 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 13 sends 33554432 bytes to rank 14
+src 13 -> dst 14 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 14 sends 33554432 bytes to rank 15
+src 14 -> dst 15 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 15 sends 33554432 bytes to rank 8
+src 15 -> dst 8 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 8 sends 33554432 bytes to rank 9
+src 8 -> dst 9 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+msg_size: 33554432
+rank 9 sends 33554432 bytes to rank 10
+src 9 -> dst 10 size 33554432 tag 0 src_port 10013 at the tick 5712555 ns
+qp finish src 3 dst 4 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 4 dst 5 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 5 dst 6 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 6 dst 7 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 7 dst 0 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 0 dst 1 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 1 dst 2 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 2 dst 3 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 11 dst 12 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 12 dst 13 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 13 dst 14 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 14 dst 15 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 15 dst 8 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 8 dst 9 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 9 dst 10 port 10013 size 33554432 at the tick 5886394 ns
+qp finish src 10 dst 11 port 10013 size 33554432 at the tick 5886394 ns
+***** info: weight gradient collective for layer: microAllReduce_256M is finished************
+
+workload stats for the job scheduled at NPU offset: 0
+*******************
+Layer id: microAllReduce_256M
+Total collectives issued for this layer: 1
+*************************  Workload stats  ************************* microAllReduce_256M
+id: microAllReduce_256M ,Total cycles spent on fwd pass compute: 0
+id: microAllReduce_256M ,Total cycles spent on weight grad compute: 0
+id: microAllReduce_256M ,Total cycles spent on input grad compute: 0
+id: microAllReduce_256M ,Total cycles spent idle waiting for fwd finish: 0
+id: microAllReduce_256M ,Total cycles spent idle waiting for weight grad finish: 5886479
+id: microAllReduce_256M ,Total cycles spent idle waiting for input grad finish: 0
+id: microAllReduce_256M ,Total cycles spent on fwd pass comm: 0
+id: microAllReduce_256M ,Total cycles spent on weight grad comm: 5886479
+id: microAllReduce_256M ,Total cycles spent on input grad comm: 0
+*************************  Queuing stats  ************************* microAllReduce_256M
+id: microAllReduce_256M ,Average cycles spent on queuing for phase 0 of algorithm (per chunk): 0
+id: microAllReduce_256M ,Average cycles spent on queuing for phase 1 of algorithm (per chunk): 0
+id: microAllReduce_256M ,Average cycles spent on queuing for phase 2 of algorithm (per chunk): 0
+id: microAllReduce_256M ,Average cycles spent on queuing for phase 3 of algorithm (per chunk): 0
+*************************  Network stats  ************************* microAllReduce_256M
+id: microAllReduce_256M ,Average cycles spent on network for phase 1 of algorithm (per message): 173839
+id: microAllReduce_256M ,Average cycles spent on network for phase 2 of algorithm (per message): 1.72548e+06
+id: microAllReduce_256M ,Average cycles spent on network for phase 3 of algorithm (per message): 173839
+*************************  Chunk Stats Per Logical Dimension (for all layers) ************************* microAllReduce_256M
+ ,Average chunk latency for logical dimension  1 of topology: 1.21762e+06
+ ,Average chunk latency for logical dimension  2 of topology: 3.45124e+06
+*************************
+all passes finished at time: 5886479, id of first layer: microAllReduce_256M
+path to create csvs is: scratch/results/
+success in openning file
+*****
+Time to exit: Mon Sep  8 15:27:09 2025
+all-reduce Collective implementation: ring ring
+reduce-scatter Collective implementation: ring ring
+all-gather Collective implementation: ring ring
+all-to-all Collective implementation: oneDirect
+Collective optimization: localBWAware
+Total sim duration: 0:0 hours
+Total streams injected: 1
+Total streams finished: 1
+Percentage of finished streams: 100 %
+*****
+Exiting
+All data sent from node 0 is 503316480
+All data received by node 0 is 503316480
+All data sent from node 1 is 503316480
+All data received by node 1 is 503316480
+All data sent from node 2 is 503316480
+All data received by node 2 is 503316480
+All data sent from node 3 is 503316480
+All data received by node 3 is 503316480
+All data sent from node 4 is 503316480
+All data received by node 4 is 503316480
+All data sent from node 5 is 503316480
+All data received by node 5 is 503316480
+All data sent from node 6 is 503316480
+All data received by node 6 is 503316480
+All data sent from node 7 is 503316480
+All data received by node 7 is 503316480
+All data sent from node 8 is 503316480
+All data received by node 8 is 503316480
+All data sent from node 9 is 503316480
+All data received by node 9 is 503316480
+All data sent from node 10 is 503316480
+All data received by node 10 is 503316480
+All data sent from node 11 is 503316480
+All data received by node 11 is 503316480
+All data sent from node 12 is 503316480
+All data received by node 12 is 503316480
+All data sent from node 13 is 503316480
+All data received by node 13 is 503316480
+All data sent from node 14 is 503316480
+All data received by node 14 is 503316480
+All data sent from node 15 is 503316480
+All data received by node 15 is 503316480
